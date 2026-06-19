@@ -47,8 +47,14 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-lg bg-brand py-2.5 font-sans text-sm font-semibold text-white shadow-sm transition hover:bg-ink disabled:opacity-60"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand py-2.5 font-sans text-sm font-semibold text-white shadow-sm transition hover:bg-ink disabled:opacity-60"
       >
+        {pending && (
+          <span
+            aria-hidden
+            className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+          />
+        )}
         {pending ? 'Signing in…' : 'Sign In'}
       </button>
     </form>

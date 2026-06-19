@@ -1,0 +1,440 @@
+# AVW Equipment Configurator — Project Status & Handoff
+
+Last updated: 2026-06-18
+
+---
+
+## 1. What We're Trying to Achieve
+
+AVW Equipment Co. Inc needs a standalone web-based car wash equipment configurator to replace
+their manual quoting process.
+
+**Origin:** The client saw a demo of Tommy Car Wash Systems' Oracle NetSuite CPQ (Configure
+Price Quote) configurator in an internal meeting (source: `Recording 2026-06-15 124224.txt`
+transcript). Someone in that meeting suggested using Claude + an Excel equipment catalog to
+build an equivalent tool in-house instead of buying NetSuite.
+
+**Why build instead of buy:**
+| | Tommy's NetSuite CPQ | This tool |
+|---|---|---|
+| Cost | $150,000+/yr | ~$50/mo (Vercel + Supabase) |
+| Quote generation time | 10–15 minutes | Instant |
+| Distributor access | Requires NetSuite seat license | Just a login |
+
+**What the tool does:**
+- Walks a salesperson or distributor through a tabbed, section-by-section equipment selection
+  process (General → Equipment → Backroom → Vacuum → POS → Controller → Items)
+- Applies dependency logic: selecting one option reveals/hides/excludes others automatically
+- Builds a live itemized price summary in real time as selections are made
+- Saves quotes with unique IDs (`AVW-2026-001`) and full revision history (B1 → B2 → B3),
+  never overwriting old revisions
+- Restricts access via login, with three roles: admin, salesperson, distributor
+
+---
+
+## 2. Tech Stack (decided)
+
+| Layer | Technology | Reason |
+|---|---|---|
+| Frontend | Next.js 14 (App Router) | User's proven stack |
+| Styling | Tailwind CSS | Fast, matches dense configurator layout |
+| State | Zustand | Complex cross-tab state without prop drilling |
+| Database | Supabase (PostgreSQL) | Quote storage, revisions, multi-user, RLS |
+| Auth | Supabase Auth | Role-based access |
+| PDF (Phase 11, deferred) | @react-pdf/renderer | Proforma Invoice + Proposal |
+| Deployment | Vercel | Instant deploys, free tier |
+
+Installed dependencies beyond the Next.js defaults: `zustand`, `@supabase/supabase-js`,
+`@supabase/ssr`, `react-hook-form`, `zod`, `lucide-react`.
+
+---
+
+## 3. Brand / Visual Design
+
+- Company: **AVW Equipment Co. Inc**
+- Primary color: Dark navy `#1a2332` (top bar, tabs)
+- Accent color: Red `#cc2229` (active tab, buttons, highlights)
+- Background: Light gray `#f4f5f7`
+- Panel: White for sections, dark sidebar for summary panel
+- Text: Dark charcoal on light backgrounds, white on dark backgrounds
+
+### Interface Layout (mirrors Tommy's NetSuite configurator)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  AVW Logo │ Quote: AVW-2026-001-B1   Units: 0  Total: $0  [Save ▼] │  ← Top Bar
+├──────────────────────────────────────────────────────────┬──────────┤
+│ [General] [Equipment] [Backroom] [Vacuum] [POS] [Controller] [Items]│  ← Tab Nav
+├──────────────────────────────────────────────────────────┬──────────┤
+│   ┌─ Section: Conveyor ─────────────────────────── [▼] ┐ │ Summary  │
+│   │  Conveyor Type: [dropdown]                          │ │ ────────│
+│   │  Conveyor Length: [40ft ▼]                          │ │ Item    │
+│   └─────────────────────────────────────────────────────┘ │ $0.00   │
+│   ┌─ Section: Pre-Soak ──────────────────────────── [▼] ┐ │ ────────│
+│   │  Pre-Soak Type: ○ None ○ Single ○ Double ○ Triple   │ │ TOTAL   │
+│   │  Sign Panel: [dropdown]  [shows when not None]       │ │ $0.00   │
+│   └─────────────────────────────────────────────────────┘ │         │
+├───────────────────────────────────────────────────────────┴─────────┤
+│  [← Back]                                          [Next → Backroom] │  ← Footer Nav
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. Database Schema (Supabase — NOT yet created)
+
+```sql
+-- User profiles with roles
+profiles (
+  id uuid references auth.users,
+  full_name text,
+  role text CHECK (role IN ('admin', 'salesperson', 'distributor')),
+  company text,
+  created_at timestamptz
+)
+
+-- Equipment categories (tabs and sections)
+categories (
+  id uuid,
+  tab text,          -- 'equipment' | 'backroom' | 'vacuum' | 'pos' | 'controller'
+  section text,      -- 'conveyor' | 'pre_soak' | 'arches' etc.
+  display_name text,
+  sort_order int
+)
+
+-- Equipment items (the catalog)
+equipment_items (
+  id uuid,
+  sku text UNIQUE,
+  name text,
+  description text,
+  category_id uuid references categories,
+  unit_price numeric,
+  is_active boolean,
+  metadata jsonb     -- extra fields (dimensions, weight, etc.)
+)
+
+-- Selectable options per equipment item
+equipment_options (
+  id uuid,
+  item_id uuid references equipment_items,
+  option_key text,   -- e.g. 'conveyor_type', 'presoak_count'
+  option_label text,
+  option_value text,
+  price_modifier numeric DEFAULT 0,
+  sort_order int
+)
+
+-- Dependency rules (the logic engine)
+dependency_rules (
+  id uuid,
+  rule_name text,
+  trigger_field text,
+  trigger_value text,
+  action_type text,  -- 'show' | 'hide' | 'require' | 'set_value' | 'exclude'
+  target_field text,
+  target_value text  -- for set_value actions
+)
+
+-- Quote headers
+quotes (
+  id uuid,
+  quote_number text UNIQUE,   -- 'AVW-2026-001'
+  customer_name text,
+  ship_to_state text,
+  ship_to_country text,
+  project_type text,
+  status text CHECK (status IN ('draft','submitted','approved','won','lost')),
+  created_by uuid references profiles,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+
+-- Revision snapshots (every save = new revision, never overwritten)
+quote_revisions (
+  id uuid,
+  quote_id uuid references quotes,
+  revision_label text,         -- 'B1', 'B2', 'B3'
+  config_snapshot jsonb,       -- complete selections across all 7 tabs at save time
+  line_items jsonb,            -- computed items + prices
+  total_price numeric,
+  saved_by uuid references profiles,
+  saved_at timestamptz,
+  notes text
+)
+```
+
+---
+
+## 5. Dependency Logic Engine
+
+Rules live in the `dependency_rules` Supabase table **and** are mirrored in
+`lib/rules/defaultRules.ts` as seed data. A `useConfiguratorRules` hook re-evaluates all rules
+on every field change.
+
+**Action types:** `show` | `hide` | `require` | `set_value` | `exclude`
+
+**Example rules pulled from the Tommy NetSuite demo transcript:**
+```ts
+// Water Treatment Center auto-excludes standalone reclaim + RO
+{ trigger_field: 'water_treatment', trigger_value: 'avw_water_treatment',
+  action_type: 'hide', target_field: 'standalone_reclaim' }
+
+// Hydraulic drive shows hydraulic pump options
+{ trigger_field: 'equipment_drive_type', trigger_value: 'hydraulic',
+  action_type: 'show', target_field: 'hydraulic_pump_section' }
+
+// Triple pre-soak requires sign panel selection
+{ trigger_field: 'presoak_count', trigger_value: 'triple',
+  action_type: 'require', target_field: 'presoak_sign_panel' }
+```
+
+---
+
+## 6. Quote ID + Revision System
+
+- Quote number format: `AVW-YYYY-NNN` (e.g. `AVW-2026-001`)
+- Revision label: `B1`, `B2`, `B3` — increments on every re-save after edits
+- Every revision is immutable — full snapshot of all 7 tabs stored in `config_snapshot` JSONB
+- Latest revision shown by default; older ones reachable via dropdown
+- Revision diff view (Phase 9) highlights what changed between B1 and B2
+
+---
+
+## 7. Tab Structure & Fields
+
+### Tab 1 — General
+| Field | Type | Notes |
+|---|---|---|
+| Built with customer? | Radio | Yes / No / Test Quote |
+| Customer Name | Text | Auto-populates quote header |
+| Ship to State | Dropdown | US states |
+| Ship to Country | Dropdown | Default: US |
+| Project Type | Radio | New Build / Retrofit / Equipment Only |
+| Project Contingency | Radio | Yes / No |
+| Equipment Drive Type | Radio | Electric Motors / Hydraulic Drive |
+| Site 3-Phase Voltage | Dropdown | 208V / 240V / 480V |
+| Site Standard Voltage | Dropdown | 120V / 240V |
+| Forklift Rental | Radio | Include / Not Included |
+
+### Tab 2 — Equipment (collapsible accordion sections)
+Conveyor (type, length 40–140ft, embeds) · Entrance Module · Pre-Soak (None/Single/Double/Triple
+→ sign panel, LED color) · Combo Units (1, 2, 3) · High Pressure Arches (type, signage, color) ·
+Paint & Rinse · Blowers & Starters · Heated Dryers · Drying Hoppers · Door Options · Ladder Rack ·
+Balls & Colors · Install Options · Startup Detergents
+
+### Tab 3 — Backroom
+Detergent Dispenser (Hydroflex / Flow Pro / other) · Tank Sizes (55gal / 80gal, quantities) ·
+Standalone Detergent Booster Pump · Primary Pumping Station · Secondary Pump · Main Booster Pump
+· Trolley · Port Count · Air Compressors · **Water Treatment Center (auto-excludes standalone
+reclaim/RO)** · Reclaim System · Reverse Osmosis · Softener · Deionization · Install & Startup
+
+### Tab 4 — Vacuum
+Number of Stalls · Spreader Bar Size (146"/116") · Colors · Canopies (Beck's styles) · Speakers ·
+Backers/Graphics
+
+### Tab 5 — POS
+POS System type · Number of lanes · Gate system
+
+### Tab 6 — Controller
+Controller type (None / Standard / Advanced) · Controller options
+
+### Tab 7 — Items (Hardware / Misc)
+Manual line item additions · Quantity + price overrides · Discount field · Internal notes
+(not shown on customer-facing output)
+
+---
+
+## 8. Folder Structure (created)
+
+```
+avw-quoting-tool/
+├── app/
+│   ├── (auth)/login/page.tsx              ← not yet created
+│   ├── (app)/
+│   │   ├── layout.tsx                     ← protected layout, not yet created
+│   │   ├── quotes/page.tsx                ← quote dashboard, not yet created
+│   │   ├── quotes/[id]/page.tsx           ← configurator for existing quote, not yet created
+│   │   ├── new/page.tsx                   ← start new quote, not yet created
+│   │   └── admin/catalog/page.tsx         ← catalog CRUD, not yet created
+│   └── api/quotes/route.ts                ← not yet created
+├── components/
+│   ├── configurator/
+│   │   ├── TopBar.tsx, TabNav.tsx, SummaryPanel.tsx, SectionAccordion.tsx  (not yet created)
+│   │   ├── tabs/GeneralTab.tsx ... ItemsTab.tsx                           (not yet created)
+│   │   └── fields/RadioGroup.tsx, SelectField.tsx, ConditionalField.tsx   (not yet created)
+│   └── ui/                                ← shared primitives, not yet created
+├── lib/
+│   ├── supabase/client.ts, server.ts, middleware.ts   (not yet created)
+│   ├── rules/engine.ts, defaultRules.ts               (not yet created)
+│   └── quotes/generateId.ts, diffRevisions.ts         (not yet created)
+├── store/
+│   ├── configuratorStore.ts, quoteStore.ts, summaryStore.ts  (not yet created)
+└── types/equipment.ts, quote.ts, rules.ts             (not yet created)
+```
+
+All directories above already exist on disk (empty, awaiting Phase 1+ content). The
+`(auth)` and `(app)` route groups and `api/quotes` folder exist but have no files in them yet.
+
+---
+
+## 9. 12-Phase Build Plan & Current Status
+
+| # | Phase | Status |
+|---|---|---|
+| 0 | Initialize Next.js + install deps + folder structure | ✅ **DONE** (2026-06-18) |
+| 1 | Supabase schema + Auth + login page | ✅ **DONE** (2026-06-19) — see notes below |
+| 2 | App shell: TopBar, TabNav, SummaryPanel, layout | ✅ **DONE** (2026-06-19) — see notes below |
+| 3 | Zustand stores + dependency rules engine | ⏳ **NEXT** |
+| 4 | General Tab (all fields, validation, Zustand wired) | pending |
+| 5 | Admin catalog panel (CRUD + CSV import) | pending |
+| 6 | Equipment Tab (all accordion sections, live prices) | pending |
+| 7 | Backroom Tab (incl. Water Treatment dependency) | pending |
+| 8 | Vacuum, POS, Controller tabs | pending |
+| 9 | Quote management: save/load/revisions/dashboard/diff | pending |
+| 10 | Items tab: manual line items, discounts, notes | pending |
+| 11 | PDF generation: Proforma Invoice + Proposal (DEFERRED) | pending |
+| 12 | Polish, error handling, Vercel deploy | pending |
+
+### What we did in Phase 0 (step by step)
+1. Ran `npx create-next-app@latest` with TypeScript, Tailwind, App Router, ESLint, no `src/`
+   directory, `@/*` import alias, npm as package manager.
+2. Installed extra dependencies: `zustand @supabase/supabase-js @supabase/ssr react-hook-form
+   zod lucide-react`.
+3. Created the full folder skeleton listed in section 8 (route groups, component folders, lib
+   subfolders, store/, types/).
+4. Added `.env.local.example` with placeholders for `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+5. Verified `npm run dev` boots and serves the default Next.js page (200 OK).
+6. Hit a Turbopack "workspace root" warning because a stray `package-lock.json` exists one
+   level up in `Documents/` (outside this project, not something we control) — fixed by setting
+   `turbopack: { root: __dirname }` in `next.config.ts`.
+7. **Folder rename (2026-06-18):** Project folder was renamed from `new-project` to
+   `avw-quoting-tool` per user request. Used `robocopy /MOVE` because a direct `mv`/
+   `Rename-Item` failed — this session's shell processes keep their working directory pinned to
+   the original path, holding an OS-level lock on it. All files copied/moved successfully into
+   `avw-quoting-tool`; re-verified `npm run dev` returns 200 from the new location. The old
+   `new-project` folder is now an empty, locked husk that can't be deleted mid-session — it's
+   harmless and can be deleted manually later from outside this session (e.g. in File Explorer).
+
+### What we did in Phase 1 (step by step)
+1. Received real Supabase project credentials from client; wrote `.env.local` (gitignored).
+2. Found this Next.js version (16.2.9) renamed `middleware.ts` → `proxy.ts` — confirmed via the
+   bundled docs (`node_modules/next/dist/docs`) per the `AGENTS.md` warning, and built session
+   refresh / route protection as `proxy.ts` + `lib/supabase/middleware.ts` accordingly.
+3. Built `lib/supabase/client.ts` (browser) and `server.ts` (server, async `cookies()`).
+4. Wrote `supabase/migrations/0001_init.sql`: `profiles` (+ trigger to auto-create a row on
+   signup, default role `salesperson`), `categories`, `equipment_items`, `equipment_options`,
+   `dependency_rules`, `quotes`, `quote_revisions`, with RLS on every table.
+5. Built login (`app/(auth)/login`) with a Zod-validated server action
+   (`lib/auth/actions.ts`), and the protected app shell (`app/(app)/layout.tsx`) with a
+   placeholder `/quotes` landing page.
+6. **Brand pass:** client provided the real logo (`avw-logo.png`, circular blue/white seal,
+   "AUTOMATIC VEHICLE WASH"). Replaced the placeholder navy/red palette with tokens drawn from
+   the logo — `ink #0f2a4d`, `brand #1b4f9c`, `sky #3b72c4`, `mist #e8eef7`, `paper #f7f8fa` —
+   defined in `app/globals.css` via Tailwind v4 `@theme`. Renamed the product from "Equipment
+   Configurator" to **"Quoting Tool"** per client. Added Bebas Neue (`--font-display`) for
+   badge-style headings/wordmark, echoing the logo's bold condensed seal lettering; kept Geist
+   Sans for body copy and for the Sign In button specifically (client found the display font
+   unclear/illegible at button size — confirmed font choice is scoped to headings only).
+   Signature visual motif: faint concentric rings on the login page echoing the logo's seal.
+7. **Caught and fixed a CSS bug:** `app/globals.css` originally had `--color-ink: var(--color-ink)`
+   (self-referencing) inside `@theme inline`, silently breaking every `text-ink`/`bg-brand`/etc.
+   utility (rendered as invisible/transparent). Fixed by moving static brand colors into a plain
+   `@theme` block. Caught via an actual Playwright screenshot, not just a `tsc` pass — installed
+   Playwright + Chromium ad hoc for this (not a project dependency, used as a one-off verification
+   tool and cleaned up after).
+8. **Caught and fixed a real RLS bug:** after creating the first admin user, the app shell kept
+   showing "salesperson" instead of "admin" even though the `profiles` row was correctly set to
+   `admin` (verified directly via a one-off service-role script). Root cause: the `profiles`
+   SELECT policy checked "is this user an admin?" by querying `profiles` again, which re-triggers
+   the same policy → Postgres error `42P17 infinite recursion detected in policy for relation
+   "profiles"`. The query silently failed and the UI fell back to its `'salesperson'` default.
+   Fixed in `supabase/migrations/0002_fix_profiles_rls_recursion.sql` with a `SECURITY DEFINER`
+   `is_admin()` helper function (executes as table owner, bypasses RLS for that one lookup,
+   breaking the recursion) — the standard Supabase-documented fix for this exact error. Migration
+   confirmed applied and working (2026-06-19) — app shell now correctly shows "admin".
+9. Confirmed two architecture decisions with the client (see section 10, items 7–8): single
+   login for all roles (not separate admin/non-admin login flows), and "refresh-to-see" data
+   freshness rather than Supabase Realtime push updates.
+
+### What we did in Phase 2 (step by step)
+1. Built `store/configuratorStore.ts` — a small Zustand store holding just `activeTab` and the
+   7-tab order/labels (`general → equipment → backroom → vacuum → pos → controller → items`),
+   with `setActiveTab` / `goNext` / `goBack`. Deliberately scoped to navigation only — unit
+   count, total price, and selections are real state that Phase 3's pricing/dependency engine
+   will own, not invented here as placeholder store fields.
+2. Built `components/configurator/`: `TopBar.tsx` (quote number + revision label, static
+   Units/Total display, disabled Save button), `TabNav.tsx` (7-tab strip wired to the store),
+   `SummaryPanel.tsx` (right-hand sidebar, empty state for now), `FooterNav.tsx` (Back/Next,
+   Next label shows the upcoming tab name, becomes a disabled "Save Quote" on the last tab),
+   and `ConfiguratorShell.tsx` composing all of them plus the active tab's content.
+3. Built one `TabPlaceholder.tsx` plus 7 thin tab components (`GeneralTab.tsx` …
+   `ItemsTab.tsx`) under `components/configurator/tabs/`, each just naming which later phase
+   builds its real fields (4, 6, 7, 8, 8, 8, 10 respectively) — so the shell has 7 real,
+   independently swappable components to render rather than one big switch statement.
+4. Wired the route: `app/(app)/quotes/[id]/page.tsx` renders `ConfiguratorShell`. The `[id]` is
+   just used for display (uppercased into a fake quote number) until Phase 9 wires real
+   persistence. Updated the `/quotes` placeholder to link to `/quotes/new` so there's something
+   to click into.
+5. Changed `(app)/layout.tsx` from `min-h-screen` to a fixed `h-screen` with `overflow-hidden`
+   on `<main>`, so the configurator's tab content and summary panel scroll independently inside
+   a fixed-height shell instead of the whole page scrolling — needed for the TopBar/TabNav/
+   FooterNav to stay pinned while a tab's content scrolls.
+6. **Verified in an actual browser, not just `tsc`:** logged in via Playwright (reused from the
+   Phase 1 ad hoc install, still not a project dependency) against a temporary throwaway test
+   account created and deleted via the service-role key — deliberately did **not** touch the
+   real admin account's password to do this. Screenshotted the General tab and confirmed
+   clicking "Equipment" in the tab strip correctly swaps content, restyles the active tab, and
+   updates the footer's "Next →" label to the following tab. All verification scripts and
+   screenshots deleted after use.
+
+---
+
+## 10. Key Decisions (carry these forward)
+
+1. **Equipment catalog lives in Supabase, not in code.** Admin panel + CSV import handle it.
+   Client has **not yet provided their catalog file** as of 2026-06-18 — this blocks real data
+   in Phase 5/6, though schema and UI can be built with placeholder/seed data first.
+2. **Dependency rules are data-driven** — stored in Supabase + seeded in `defaultRules.ts`. New
+   logic = insert a row, not a code change.
+3. **Every save creates a new revision.** `config_snapshot` JSONB stores the complete state of
+   all 7 tabs. Old revisions are never overwritten.
+4. **Zustand is the single source of truth** while configuring. Serialized to `config_snapshot`
+   on save, deserialized back into the store on load.
+5. **PDF generation (Phase 11) is deferred.** Client confirmed the configurator + quote saving
+   is the priority; PDF work starts only after the core tool is validated.
+6. **Role hierarchy:** Admin (full access + catalog management) > Salesperson (own quotes) >
+   Distributor (own quotes only, no admin panel).
+7. **One login, not two.** Confirmed with client (2026-06-19): a single login form for everyone.
+   What differs after sign-in is role-based — admin gets an extra Admin section (catalog CRUD,
+   Phase 5); salesperson/distributor only see the configurator + their own quotes. No separate
+   admin login URL/flow.
+8. **Data freshness is "refresh-to-see," not real-time push.** Confirmed with client
+   (2026-06-19): when admin edits the catalog, salespeople/distributors see the change the next
+   time they load or navigate a page — standard server-rendered-on-each-request behavior,
+   already how the app works. Explicitly **not** building Supabase Realtime subscriptions for
+   live in-session updates; out of scope unless requested later.
+
+---
+
+## 11. What's Blocking Progress Right Now
+
+- **Equipment catalog file** (SKUs, names, prices, options) has not been provided by the client
+  yet. Not blocking for Phase 3–4, but needed before Phase 5/6 can use real data instead of
+  placeholders.
+- Nothing else is currently blocking — Phase 3 (Zustand stores + dependency rules engine) can
+  start immediately.
+
+---
+
+## 12. How to Resume This Project
+
+1. Open this file first for full context.
+2. Confirm working directory is `C:\Users\Joseph Ilashe VM\Documents\Workflows\AVW\avw-quoting-tool`.
+3. Check section 9 for the current phase and section 11 for what's blocking it.
+4. Detailed phase-by-phase specs and the verification checklist (per-phase "how to verify") are
+   also kept in the original plan file:
+   `C:\Users\Joseph Ilashe VM\.claude\plans\splendid-leaping-stearns.md`
+5. Update the status table in section 9 and the "What we did" log in section 9 at the end of
+   every session, so this file stays the single source of truth for project history.

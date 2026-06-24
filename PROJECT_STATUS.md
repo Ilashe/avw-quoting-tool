@@ -1,6 +1,6 @@
 # AVW Equipment Configurator — Project Status & Handoff
 
-Last updated: 2026-06-18
+Last updated: 2026-06-24
 
 ---
 
@@ -285,10 +285,10 @@ All directories above already exist on disk (empty, awaiting Phase 1+ content). 
 | 0 | Initialize Next.js + install deps + folder structure | ✅ **DONE** (2026-06-18) |
 | 1 | Supabase schema + Auth + login page | ✅ **DONE** (2026-06-19) — see notes below |
 | 2 | App shell: TopBar, TabNav, SummaryPanel, layout | ✅ **DONE** (2026-06-19) — see notes below |
-| 3 | Zustand stores + dependency rules engine | ⏳ **NEXT** |
-| 4 | General Tab (all fields, validation, Zustand wired) | pending |
+| 3 | Zustand stores + dependency rules engine | ✅ **DONE** (2026-06-24) — see notes below |
+| 4 | General Tab (all fields, validation, Zustand wired) | 🔶 **PARTIAL** (2026-06-24) — real fields wired, see notes below |
 | 5 | Admin catalog panel (CRUD + CSV import) | pending |
-| 6 | Equipment Tab (all accordion sections, live prices) | pending |
+| 6 | Equipment Tab (all accordion sections, live prices) | 🔶 **PARTIAL** (2026-06-24) — Conveyor, Belt Specifications, Entrance Module, Presoak, High Pressure Equipment done; Friction and all other sub-tabs still pending; no pricing yet |
 | 7 | Backroom Tab (incl. Water Treatment dependency) | pending |
 | 8 | Vacuum, POS, Controller tabs | pending |
 | 9 | Quote management: save/load/revisions/dashboard/diff | pending |
@@ -389,6 +389,154 @@ All directories above already exist on disk (empty, awaiting Phase 1+ content). 
    updates the footer's "Next →" label to the following tab. All verification scripts and
    screenshots deleted after use.
 
+### What we did in Phase 3/4/6 (step by step) — 2026-06-24
+Client sent the first batch of real catalog data ("AVW Quoting Tool Logic 6.23.2026.docx",
+reorganized into `Main Tabs.txt`), covering the **General** tab and five **Equipment** sub-tabs:
+Conveyor, Belt Specifications, Entrance Module, Presoak, High Pressure Equipment. ("Friction" is
+explicitly undefined in the source — left as a "coming soon" placeholder.) Client will keep
+sending more catalog data in batches; **each batch should update both the DB seed migration and
+the relevant tab UI**, not just one or the other.
+
+1. Built the real dependency rules engine instead of placeholder Phase 3 scaffolding directly
+   against this real data: `types/equipment.ts` (Category/EquipmentItem/EquipmentOption/
+   DependencyRule types), `store/selectionsStore.ts` (flat Zustand `field_key -> value` map,
+   replaces the need for per-tab state), `lib/rules/engine.ts` (pure functions: `isFieldVisible`,
+   `isFieldRequired`, `getExcludedOptionValues`, `getForcedValue` — generically support all 5
+   action types: show/hide/require/set_value/exclude), `lib/rules/defaultRules.ts` (hand-kept
+   code mirror of the seeded DB rules, per decision #2).
+2. **General tab is NOT catalog-driven** — its 7 fields (Customer, Ship to State, Ship to
+   Country, Equipment Drive Type, Site 3-Phase Voltage, Site Standard Voltage, Liftgate
+   Required) are fixed quote-header attributes, not priced equipment, so they live in
+   `lib/configurator/generalFields.ts` as a plain TS array, not in `equipment_items`. This
+   replaces the earlier *guessed* General tab field list from the original phase-0 planning
+   doc — the client-provided list is now authoritative.
+3. Equipment sub-tab fields **are** catalog-driven (admin-editable later): seeded via
+   `supabase/migrations/0003_equipment_conveyor_belt_entrance_presoak_hp.sql` — 5 categories,
+   27 equipment_items (one per field, `metadata.field_key`/`widget` drive rendering), their
+   options, and 7 dependency_rules. **No pricing data provided yet — every item/option seeded
+   at $0**, to be updated in a separate pricing data drop. Migration is written to be
+   re-runnable (deletes its own batch by `sku`/`rule_name` prefix before re-inserting), since
+   more fields will be added to these same sections later.
+4. Built generic field components (`components/configurator/fields/`: `TextField`,
+   `RadioGroup`, `SelectField`, `NumberField`) and `SectionAccordion.tsx`, used by both the
+   General tab (static fields) and Equipment tab (catalog-driven fields) so there's one set of
+   styled inputs, not two.
+5. Built `lib/catalog/useEquipmentCatalog.ts` — client-side fetch (categories + items +
+   options + rules) for a given tab, consistent with the "refresh-to-see" decision (#8), no
+   realtime subscriptions.
+6. Built the real `GeneralTab.tsx` and `EquipmentTab.tsx`, replacing their Phase-2
+   placeholders. `EquipmentTab` renders one `SectionAccordion` per category plus a static
+   "Friction — coming soon" accordion at the end.
+7. **Confirmed field-level specifics with the client during this session** (carry these
+   forward — not in the source doc itself):
+   - Conveyor Length is a free numeric input in **inches** (not feet, despite the source doc's
+     `'` mark and despite this seeming short for a conveyor — client explicitly confirmed
+     inches twice), range 40–165, with a "contact support" helper message outside that range.
+   - Avalanche's dependency on Presoak is **not yet fully specified** — every option shows
+     unconditionally for now; revisit once the client provides the full logic.
+   - Flight Spacing options are constrained by the selected Flight Size: 1in→{1in,1.25in},
+     1.25in→{1in,1.25in}, 1.5in→{1in,1.25in,1.5in}, 2in→all four; Flight Size=No hides the
+     Flight Spacing field entirely. Implemented as 5 `exclude` rules + 1 `hide` rule.
+   - Pricing is confirmed to be a separate, later data drop — fine to seed catalog
+     fields/options at $0 now.
+8. **Caught and fixed a real rules-engine bug during browser verification:** CTA Type was
+   seeded with a `hide` rule (`cta=no → hide cta_type`), which left it incorrectly *visible*
+   before CTA had been answered at all (selections start at `null`, which never equals `'no'`).
+   Fixed by changing it to a `show` rule (`cta=yes → show cta_type`), making it default-hidden
+   instead — the correct semantics whenever a field should only appear after a specific
+   trigger value, vs. fields that are default-visible and hidden by a specific value.
+9. **Verified in an actual browser** against the **real admin account** (client provided
+   credentials directly this session) — logged in via Playwright, filled a General tab field,
+   confirmed all 27 Equipment fields render across all 5 sections, and exercised the dependency
+   logic end-to-end: CTA Type hidden until CTA=Yes, Flight Spacing's option list correctly
+   shrinks/grows with Flight Size, Flight Spacing disappears entirely when Flight Size=No. Also
+   hit and worked around a `next dev` Turbopack panic on this machine (Windows-specific
+   `0xc0000142` child-process crash compiling `globals.css`) — verification was done against a
+   production build (`next build` + `next start`) instead, which is unaffected. Verification
+   script and screenshots deleted after use; no DB connection string is available to this
+   assistant (only REST/anon/service-role keys), so **migrations must be run manually by the
+   client in the Supabase SQL Editor** going forward, same as before.
+
+### What we did 2026-06-24 (continued) — live Quote Summary + Turbopack fix
+Client explicitly said we don't need to follow the 12-phase order strictly going forward — work
+proceeds by whatever the client asks for next, catalog data keeps arriving incrementally, and
+this file is the source of truth for "what's actually been built" regardless of phase number.
+
+1. **Fixed the `next dev` Turbopack crash for real** (previously just worked around via
+   `next build`/`next start`). Root cause, per the bundled Turbopack docs: PostCSS runs in a
+   Node.js worker pool under Turbopack, and that worker process was crashing immediately on
+   this machine (`0xc0000142`, a Windows DLL-init failure) — likely a Turbopack/Windows/Node-v24
+   incompatibility. A clean `node_modules` reinstall (`npm ci`) did **not** fix it, ruling out
+   stale binaries left over from the machine migration. Fix: `package.json`'s `dev` script is
+   now `next dev --webpack` (Next's documented Turbopack opt-out) — confirmed working via a
+   normal `npm run dev`. `next build`/`next start` are untouched and still use Turbopack for
+   production (unaffected by this bug).
+2. **Rebuilt `SummaryPanel.tsx`** (`components/configurator/SummaryPanel.tsx`) to be a live,
+   rules-aware readout of every selected field across tabs, instead of a static empty-state
+   placeholder:
+   - Reads `lib/configurator/generalFields.ts` for General tab labels/options (always visible,
+     no rules), and re-fetches the Equipment catalog via `useEquipmentCatalog('equipment')`
+     for item names + option labels.
+   - For each field with a non-null/non-empty value, resolves the **human-readable label**
+     (not the raw `field_key`/`option_value`) — e.g. shows "Roller Correlator: Yes", not
+     `roller_correlator: yes`.
+   - Equipment fields are filtered through `isFieldVisible()` (the same dependency-rules
+     engine the tab uses), so a value left over in a now-hidden field doesn't linger in the
+     summary — confirmed via browser test: selecting CTA=Yes + CTA Type=Foaming shows both
+     rows, then reverting CTA to No makes the "CTA Type" row disappear again even though its
+     stored value (`foaming`) is technically still sitting in the Zustand store.
+   - Total still hardcoded at $0.00 — no pricing data yet (see blockers).
+   - **Known limitation to revisit:** the catalog is re-fetched independently in both
+     `EquipmentTab` and `SummaryPanel` (two network calls instead of one shared fetch). Fine at
+     today's small data volume; worth lifting into a shared context/store once more tabs
+     (Backroom, Vacuum, POS, Controller) are catalog-driven too, so the summary doesn't need to
+     fetch N tabs' worth of catalog separately.
+3. **Widened the summary panel** from `w-72` (288px) to `w-96` (384px) per client request, to
+   fit longer field names/values comfortably.
+4. Verified both changes together in an actual browser (Playwright, against the real admin
+   account, `npm run dev` now that it's fixed): General text field fill reflects live in the
+   summary, Equipment radio selections reflect live, and the CTA/CTA Type show/hide behavior
+   round-trips correctly in the summary panel itself, not just the tab.
+
+### What we did 2026-06-24 (continued) — single-scroll layout + sticky Quote Summary
+Client asked for the whole page (draft content + Quote Summary) to grow downward naturally with
+**one scrollbar controlling everything**, instead of the Phase-2 fixed-height shell where the
+tab content scrolled in its own clipped box. On top of that, the Quote Summary should be
+**static/pinned in view** as you scroll, with **its own internal scrollbar** so a long, growing
+selection list can be navigated independently of the page scroll.
+
+1. **Single page scroll:** `app/(app)/layout.tsx`'s `<main>` is now the one real scroll
+   container (`overflow-y-auto`) for everything below the top app header (logo/sign-out bar,
+   which stays put as before). `ConfiguratorShell.tsx` no longer imposes its own
+   `overflow-hidden`/`overflow-y-auto` on the TopBar/TabNav/content/FooterNav — they're normal
+   flow now, so the whole tab grows to its natural content height and `main` scrolls it as one
+   unit. Also removed a leftover `h-full` wrapper div in `app/(app)/quotes/[id]/page.tsx` (a
+   Phase-2 relic) that was fighting the new layout.
+2. **Hit and fixed a real flexbox bug along the way:** `main` being `flex-1` inside a flex
+   column wasn't enough — flex items default to `min-height: auto`, which lets them grow to fit
+   their content instead of respecting the flex-basis. Without `min-h-0` on `main`, it was
+   silently expanding past the viewport on content-heavy tabs (e.g. Equipment), which doesn't
+   show as a second visible scrollbar (overflow-hidden on `html`/`body` suppresses that) but is
+   real latent breakage worth knowing about if anything ever looks subtly miscalculated. Fixed
+   by adding `min-h-0` to `main`'s classes. Also added defensive `overflow-hidden` on `<html>`,
+   `<body>`, and the outer app-shell div as a backstop so there's never more than one scrollable
+   element on the page, confirmed by enumerating every element with `overflow-y: auto/scroll`
+   that's actually scrollable (`scrollHeight > clientHeight`) — only `main` qualifies.
+3. **Quote Summary is now `position: sticky` + its own internal scrollbar:**
+   `SummaryPanel.tsx`'s `<aside>` is `sticky top-0 self-start h-screen w-96` — `self-start`
+   matters because flex items default to stretching to the row's full height, which would
+   defeat the sticky effect; `self-start` lets it keep its own `h-screen` box instead. Verified
+   with real mouse-wheel scrolling (not Playwright's `.click()`, which does its own internal
+   `scrollIntoView` that doesn't always trigger sticky recalculation the same way a real wheel
+   event does — learned this the hard way mid-verification) that: the panel stays pinned at a
+   fixed position while the page scrolls, releases naturally right as the page content's bottom
+   edge approaches, and — once the selection list genuinely overflows the panel's available
+   height — scrolling with the cursor over the panel moves only its internal list (header
+   "Quote Summary" and footer "Total" stay fixed in place), leaving the page's own scroll
+   position untouched.
+4. Confirmed working via `npm run dev` directly (no `next build`/`next start` workaround
+   needed) — the earlier Turbopack `dev` fix is holding up under this layout change too.
+
 ---
 
 ## 10. Key Decisions (carry these forward)
@@ -420,11 +568,25 @@ All directories above already exist on disk (empty, awaiting Phase 1+ content). 
 
 ## 11. What's Blocking Progress Right Now
 
-- **Equipment catalog file** (SKUs, names, prices, options) has not been provided by the client
-  yet. Not blocking for Phase 3–4, but needed before Phase 5/6 can use real data instead of
-  placeholders.
-- Nothing else is currently blocking — Phase 3 (Zustand stores + dependency rules engine) can
-  start immediately.
+- **Pricing data** for the equipment seeded so far (Conveyor, Belt Specifications, Entrance
+  Module, Presoak, High Pressure Equipment) has not been provided — every item/option is $0.
+  Confirmed (2026-06-24) this is an intentional separate, later data drop; not blocking further
+  field/logic work.
+- **Avalanche's dependency on Presoak** is not fully specified yet — currently shows
+  unconditionally. Revisit once the client sends the full logic.
+- **Remaining catalog data** (Friction section, all of Backroom/Vacuum/POS/Controller, and the
+  rest of Equipment) has not been sent yet — client is sending it incrementally, one batch at a
+  time. Each batch needs both a DB seed migration update and a tab UI update.
+- This assistant has no direct Postgres connection string (only REST/anon/service-role keys),
+  so **every migration must be run manually by the client in the Supabase SQL Editor**.
+- ~~`next dev` (Turbopack) panics on this machine on `app/globals.css`~~ — **RESOLVED
+  2026-06-24.** Root cause: per the bundled Turbopack docs, PostCSS runs in a Node.js worker
+  pool; that worker process crashed immediately with no output (`0xc0000142`, a Windows
+  DLL-init failure) — likely a Turbopack/Windows/Node-v24 worker-spawn incompatibility, not an
+  app code or `node_modules` issue (confirmed via a clean `npm ci` reinstall, which didn't fix
+  it). Fix: `package.json`'s `dev` script now runs `next dev --webpack` (Next's documented
+  Turbopack opt-out). Dev rebuilds are slightly slower than Turbopack but reliable. Revisit
+  switching back to plain `next dev` if a future Next.js/Turbopack release fixes this upstream.
 
 ---
 

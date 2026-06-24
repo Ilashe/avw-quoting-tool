@@ -1,5 +1,57 @@
-import TabPlaceholder from './TabPlaceholder'
+'use client'
+
+import { generalFields } from '@/lib/configurator/generalFields'
+import { useSelectionsStore } from '@/store/selectionsStore'
+import TextField from '../fields/TextField'
+import RadioGroup from '../fields/RadioGroup'
+import SelectField from '../fields/SelectField'
 
 export default function GeneralTab() {
-  return <TabPlaceholder tabName="General" phase={4} />
+  const values = useSelectionsStore((s) => s.values)
+  const setField = useSelectionsStore((s) => s.setField)
+
+  return (
+    <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-5">
+      {generalFields.map((field) => {
+        const value = values[field.key] ?? null
+
+        if (field.widget === 'text') {
+          return (
+            <TextField
+              key={field.key}
+              label={field.label}
+              required={field.required}
+              value={typeof value === 'string' ? value : ''}
+              onChange={(v) => setField(field.key, v)}
+            />
+          )
+        }
+
+        if (field.widget === 'radio') {
+          return (
+            <RadioGroup
+              key={field.key}
+              name={field.key}
+              label={field.label}
+              required={field.required}
+              options={field.options ?? []}
+              value={typeof value === 'string' ? value : null}
+              onChange={(v) => setField(field.key, v)}
+            />
+          )
+        }
+
+        return (
+          <SelectField
+            key={field.key}
+            label={field.label}
+            required={field.required}
+            options={field.options ?? []}
+            value={typeof value === 'string' ? value : null}
+            onChange={(v) => setField(field.key, v)}
+          />
+        )
+      })}
+    </div>
+  )
 }

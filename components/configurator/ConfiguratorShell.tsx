@@ -34,11 +34,11 @@ export default function ConfiguratorShell({
   const ActiveTabContent = TAB_COMPONENTS[activeTab]
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       <TopBar quoteNumber={quoteNumber} revisionLabel={revisionLabel} />
       <TabNav />
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex">
+        <div className="flex-1 p-6">
           <ActiveTabContent />
         </div>
         <SummaryPanel />

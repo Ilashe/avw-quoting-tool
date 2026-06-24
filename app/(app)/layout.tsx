@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const initials = displayName.slice(0, 2).toUpperCase()
 
   return (
-    <div className="flex h-screen flex-col bg-paper">
+    <div className="flex h-screen flex-col overflow-hidden bg-paper">
       <header className="flex shrink-0 items-center justify-between bg-ink px-6 py-3 text-white">
         <div className="flex items-center gap-3">
           <Image src="/avw-logo.png" alt="AVW Equipment Co." width={32} height={32} />
@@ -50,7 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </form>
         </div>
       </header>
-      <main className="flex-1 overflow-hidden">{children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">{children}</main>
     </div>
   )
 }

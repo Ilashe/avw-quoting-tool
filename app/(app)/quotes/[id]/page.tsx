@@ -11,9 +11,5 @@ export default async function QuoteConfiguratorPage({
   // URL just stands in for the quote number so the shell has something to show.
   const quoteNumber = id === 'new' ? 'AVW-DRAFT' : id.toUpperCase()
 
-  return (
-    <div className="h-full">
-      <ConfiguratorShell quoteNumber={quoteNumber} revisionLabel="B1" />
-    </div>
-  )
+  return <ConfiguratorShell quoteNumber={quoteNumber} revisionLabel="B1" />
 }

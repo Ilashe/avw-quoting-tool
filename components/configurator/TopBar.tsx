@@ -1,38 +1,55 @@
 'use client'
 
+import Link from 'next/link'
+import { useSelectionsStore } from '@/store/selectionsStore'
+
 export default function TopBar({
-  quoteNumber,
-  revisionLabel,
+  saving,
+  onNewQuote,
 }: {
-  quoteNumber: string
-  revisionLabel: string
+  saving: boolean
+  onNewQuote: () => void
 }) {
+  const customerName = useSelectionsStore((s) => s.values['customer'] as string | null | undefined)
+
   return (
     <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
       <div>
         <p className="font-display text-xl uppercase tracking-wide text-ink">
-          {quoteNumber}
-          <span className="ml-2 text-sm text-slate-400">{revisionLabel}</span>
+          {customerName || 'New Quote'}
+        </p>
+        <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+          {saving ? (
+            <>
+              <span className="inline-block size-1.5 rounded-full bg-amber-400" />
+              Saving…
+            </>
+          ) : (
+            <>
+              <span className="inline-block size-1.5 rounded-full bg-green-400" />
+              Saved
+            </>
+          )}
         </p>
       </div>
-      <div className="flex items-center gap-6 text-sm">
-        <div className="text-right">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">Units</p>
-          {/* Phase 3 wires this up to selection count */}
-          <p className="font-semibold text-ink">0</p>
-        </div>
+
+      <div className="flex items-center gap-4 text-sm">
         <div className="text-right">
           <p className="text-[11px] uppercase tracking-wide text-slate-400">Total</p>
-          {/* Phase 3 wires this up to the pricing engine */}
           <p className="font-mono font-semibold text-ink">$0.00</p>
         </div>
+        <Link
+          href="/quotes"
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-mist"
+        >
+          ← Quotes
+        </Link>
         <button
           type="button"
-          disabled
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white opacity-50"
-          title="Quote saving is built in Phase 9"
+          onClick={onNewQuote}
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-ink"
         >
-          Save ▾
+          New Quote
         </button>
       </div>
     </div>

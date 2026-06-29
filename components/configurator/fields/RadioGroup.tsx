@@ -32,10 +32,10 @@ export default function RadioGroup({
           return (
             <label
               key={option.value}
-              className={`relative cursor-pointer rounded-full border px-3 py-1.5 text-sm transition ${
+              className={`relative cursor-pointer rounded-full border px-2.5 py-1 text-xs transition ${
                 checked
                   ? 'border-brand bg-brand text-white'
-                  : 'border-slate-200 text-ink hover:border-brand/50'
+                  : 'border-slate-200 text-slate-600 hover:border-brand/50'
               }`}
             >
               <input

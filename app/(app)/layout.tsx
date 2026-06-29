@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { logout } from '@/lib/auth/actions'
+import LogoutButton from '@/components/LogoutButton'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -40,14 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <p className="text-[11px] capitalize text-slate-300">{profile?.role ?? 'salesperson'}</p>
             </div>
           </div>
-          <form action={logout}>
-            <button
-              type="submit"
-              className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-brand hover:border-brand"
-            >
-              Sign Out
-            </button>
-          </form>
+          <LogoutButton />
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">{children}</main>

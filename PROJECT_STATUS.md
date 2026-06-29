@@ -1,6 +1,6 @@
 # AVW Equipment Configurator — Project Status & Handoff
 
-Last updated: 2026-06-24
+Last updated: 2026-06-28
 
 ---
 
@@ -286,14 +286,14 @@ All directories above already exist on disk (empty, awaiting Phase 1+ content). 
 | 1 | Supabase schema + Auth + login page | ✅ **DONE** (2026-06-19) — see notes below |
 | 2 | App shell: TopBar, TabNav, SummaryPanel, layout | ✅ **DONE** (2026-06-19) — see notes below |
 | 3 | Zustand stores + dependency rules engine | ✅ **DONE** (2026-06-24) — see notes below |
-| 4 | General Tab (all fields, validation, Zustand wired) | 🔶 **PARTIAL** (2026-06-24) — real fields wired, see notes below |
+| 4 | General Tab (all fields, validation, Zustand wired) | 🔶 **PARTIAL** (2026-06-28) — fields wired; Ship to State/Country removed; Ship to Address (Google Places autocomplete) added; validation still pending |
 | 5 | Admin catalog panel (CRUD + CSV import) | pending |
-| 6 | Equipment Tab (all accordion sections, live prices) | 🔶 **PARTIAL** (2026-06-24) — Conveyor, Belt Specifications, Entrance Module, Presoak, High Pressure Equipment done; Friction and all other sub-tabs still pending; no pricing yet |
-| 7 | Backroom Tab (incl. Water Treatment dependency) | pending |
-| 8 | Vacuum, POS, Controller tabs | pending |
-| 9 | Quote management: save/load/revisions/dashboard/diff | pending |
+| 6 | Equipment Tab (all accordion sections, live prices) | 🔶 **PARTIAL** (2026-06-28) — Conveyor, Belt Specs, Entrance Module, Presoak, High Pressure Equipment done; Friction Equipment = placeholder (specs not provided); remaining Equipment sub-tabs pending client data; no pricing yet |
+| 7 | Backroom Tab (incl. Water Treatment dependency) | pending — awaiting client catalog data |
+| 8 | Vacuum + 2 NEW tabs (Fixtures & Signs, Misc Tunnel Equipment) + POS + Controller | 🔶 **PARTIAL** (2026-06-28) — Vacuum/POS/Controller = placeholders; Fixtures & Signs + Misc Tunnel Equipment tabs added as placeholders; all 5 await client catalog data |
+| 9 | Quote management: save/load/revisions/dashboard/diff | ⚠️ **CRITICAL / pending** — Save button is still disabled; no quote persistence, no dashboard list, no revision history |
 | 10 | Items tab: manual line items, discounts, notes | pending |
-| 11 | PDF generation: Proforma Invoice + Proposal (DEFERRED) | pending |
+| 11 | PDF generation: Proforma Invoice + Proposal (DEFERRED) | deferred — starts after Phase 9 validated |
 | 12 | Polish, error handling, Vercel deploy | pending |
 
 ### What we did in Phase 0 (step by step)
@@ -537,6 +537,56 @@ selection list can be navigated independently of the page scroll.
 4. Confirmed working via `npm run dev` directly (no `next build`/`next start` workaround
    needed) — the earlier Turbopack `dev` fix is holding up under this layout change too.
 
+### What we did 2026-06-28 — UI polish + new tabs + Google Places + state reset
+
+1. **Conveyor Length overhaul:** Changed unit from `in` → `ft`. Changed widget from plain
+   `NumberField` to `ComboNumberField` (`combobox_range`) — a Word font-size-style combo box
+   that shows a dropdown of every integer 40–165 ft but also allows free text input. Restored
+   the "None" checkbox (disables the input when checked, stores `'none'`). "Contact support"
+   helper text changed to "Contact tech support" as a `mailto:teamsales@avwequipment.com`
+   hyperlink with an explicit `onClick` handler so browser mail clients open reliably. **Requires
+   re-running migration 0003 in Supabase SQL Editor to take effect in the DB.**
+
+2. **General Tab field changes:**
+   - Removed "Ship to State" and "Ship to Country" fields.
+   - Added "Ship to Address" — a Google Places autocomplete field. Debounces on each keystroke
+     (300ms), calls `AutocompleteSuggestion.fetchAutocompleteSuggestions` (new Places API, not
+     the deprecated `Autocomplete` class), and renders a styled suggestion dropdown. Degrades
+     to a plain text input if `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is missing. **Requires client
+     to obtain a Google Maps API key with Places API enabled and add it to `.env.local`.**
+
+3. **Two new tabs added** (after Vacuum in the tab strip):
+   - "Fixtures & Signs" (`fixtures_signs`) — placeholder, awaiting catalog data.
+   - "Misc Tunnel Equip." (`misc_tunnel_equipment`) — placeholder, awaiting catalog data.
+   Tab order is now: General → Equipment → Backroom → Vacuum → Fixtures & Signs →
+   Misc Tunnel Equip. → POS → Controller → Items (9 tabs total, up from 7).
+
+4. **Friction section renamed** to "Friction Equipment" in the Equipment tab accordion.
+
+5. **Typography hierarchy:** Option labels (radio pills, select content) changed to `text-xs`
+   vs field labels at `text-sm font-medium` — visible size difference between tool name and
+   its options. Radio pills also slightly more compact (`px-2.5 py-1` vs `px-3 py-1.5`).
+
+6. **All dropdowns are now fit-to-content width** (`w-auto`) — no more full-width `<select>`
+   elements. Applies globally to `SelectField`, including any new dropdowns built going forward.
+
+7. **Accordion auto-collapse:** Sections now auto-close 700ms after the **last visible field
+   in that section is filled** (not on every individual interaction). Computed in `EquipmentTab`
+   by checking that every item where `isFieldVisible()` is true has a non-null/non-empty value
+   in the Zustand store. The `SectionAccordion` receives an `allFilled` prop and uses a
+   `useEffect` that skips mount (so already-filled sections don't close on load) and fires only
+   on the false→true transition.
+
+8. **Sign-out clears Zustand state:** Replaced the `<form action={logout}>` server-action form
+   in `app/(app)/layout.tsx` with a `<LogoutButton>` client component that synchronously resets
+   both `selectionsStore` (all field values → `{}`) and `configuratorStore` (activeTab →
+   `'general'`) before calling the server action. This ensures a clean slate when the next
+   user signs in on the same browser session.
+
+9. **SSR crash fixed in AddressAutocompleteField:** `setOptions()` from `@googlemaps/js-api-loader`
+   internally references `window` — calling it at module level caused a `ReferenceError` during
+   server-side rendering. Moved all Google Maps init inside `useEffect` (client-only).
+
 ---
 
 ## 10. Key Decisions (carry these forward)
@@ -568,25 +618,57 @@ selection list can be navigated independently of the page scroll.
 
 ## 11. What's Blocking Progress Right Now
 
-- **Pricing data** for the equipment seeded so far (Conveyor, Belt Specifications, Entrance
-  Module, Presoak, High Pressure Equipment) has not been provided — every item/option is $0.
-  Confirmed (2026-06-24) this is an intentional separate, later data drop; not blocking further
-  field/logic work.
-- **Avalanche's dependency on Presoak** is not fully specified yet — currently shows
-  unconditionally. Revisit once the client sends the full logic.
-- **Remaining catalog data** (Friction section, all of Backroom/Vacuum/POS/Controller, and the
-  rest of Equipment) has not been sent yet — client is sending it incrementally, one batch at a
-  time. Each batch needs both a DB seed migration update and a tab UI update.
-- This assistant has no direct Postgres connection string (only REST/anon/service-role keys),
-  so **every migration must be run manually by the client in the Supabase SQL Editor**.
+### Client must action these before they take effect in the app:
+- **Re-run migration 0003** (`supabase/migrations/0003_equipment_conveyor_belt_entrance_presoak_hp.sql`)
+  in the Supabase SQL Editor — required to pick up the Conveyor Length changes from 2026-06-28
+  (unit ft, widget combobox_range, mailto metadata for the tech support link).
+- **Google Maps API key** — add `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=<key>` to `.env.local`.
+  Steps: Google Cloud Console → APIs & Services → enable Maps JavaScript API + Places API →
+  create API key (restrict to your domain for production) → restart `npm run dev`. Without this,
+  Ship to Address works as a plain text input only (no autocomplete suggestions).
+
+### Waiting on client to provide:
+- **Pricing data** for all seeded equipment (Conveyor, Belt Specs, Entrance Module, Presoak,
+  High Pressure Equipment) — every item/option currently $0. TopBar "Total" and SummaryPanel
+  "Total" will stay $0.00 until prices are provided.
+- **Friction Equipment specs** — section is a "coming soon" placeholder.
+- **Remaining Equipment sub-tabs** (everything beyond the 5 seeded sections).
+- **Backroom Tab catalog data** — tab is a placeholder.
+- **Vacuum, POS, Controller catalog data** — tabs are placeholders.
+- **Fixtures & Signs catalog data** — tab added 2026-06-28, placeholder.
+- **Miscellaneous Tunnel Equipment catalog data** — tab added 2026-06-28, placeholder.
+- **Avalanche/Presoak dependency logic** — Avalanche options show unconditionally until the
+  full conditional rule is defined.
+
+### Each catalog data batch requires both:
+  1. A new or updated DB seed migration (added to `supabase/migrations/`)
+  2. The corresponding tab UI updated (or built from scratch if the tab is still a placeholder)
+  Never update just one without the other.
+
+### Still to build (no data blocker — code work):
+- **Phase 9 — Quote save/load/revisions** — the single biggest missing feature. The Save Quote
+  button is disabled. No quote persists across page refreshes. No quote dashboard (list of saved
+  quotes). No revision history (B1 → B2 → B3). This must be built before the tool is usable
+  in the field.
+- **Phase 10 — Items tab** — manual line items, quantities, discount field, internal notes.
+- **Phase 5 — Admin catalog panel** — CRUD interface + CSV import so AVW staff can edit the
+  catalog without touching the DB directly. Role-gated to admin only.
+- **SummaryPanel multi-tab awareness** — currently only reads General + Equipment catalog.
+  Must be extended to show selections from Backroom, Vacuum, Fixtures & Signs, Misc Tunnel
+  Equipment, POS, Controller as those tabs get built out.
+- **General Tab validation** — required fields (Customer, Equipment Drive Type, etc.) should
+  block navigation to the next tab until filled. Currently there is no validation gate.
+- **Role-based UI differences** — admin sees the admin panel link; salesperson/distributor do
+  not. The role is read correctly in the header but no admin-gated routes exist yet beyond the
+  layout-level check.
+
+### Operational notes (carry forward every session):
+- No direct Postgres connection available to this assistant (only REST/anon/service-role keys)
+  — every SQL migration must be run manually by the client in the Supabase SQL Editor.
+- `npm run dev` uses `--webpack` flag (Turbopack disabled) due to a Windows/Node-v24
+  incompatibility with Turbopack's PostCSS worker pool. `next build`/`next start` are unaffected.
 - ~~`next dev` (Turbopack) panics on this machine on `app/globals.css`~~ — **RESOLVED
-  2026-06-24.** Root cause: per the bundled Turbopack docs, PostCSS runs in a Node.js worker
-  pool; that worker process crashed immediately with no output (`0xc0000142`, a Windows
-  DLL-init failure) — likely a Turbopack/Windows/Node-v24 worker-spawn incompatibility, not an
-  app code or `node_modules` issue (confirmed via a clean `npm ci` reinstall, which didn't fix
-  it). Fix: `package.json`'s `dev` script now runs `next dev --webpack` (Next's documented
-  Turbopack opt-out). Dev rebuilds are slightly slower than Turbopack but reliable. Revisit
-  switching back to plain `next dev` if a future Next.js/Turbopack release fixes this upstream.
+  2026-06-24** via `next dev --webpack` opt-out.
 
 ---
 

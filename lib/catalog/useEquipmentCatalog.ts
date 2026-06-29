@@ -18,7 +18,8 @@ const EMPTY: CatalogData = { categories: [], items: [], options: [], rules: [] }
  * Per decision #8 in PROJECT_STATUS.md, freshness is "refresh-to-see" — no realtime
  * subscriptions, just a fetch on mount.
  */
-export function useEquipmentCatalog(tab: string) {
+/** Pass null to load all tabs at once (used by SummaryPanel). */
+export function useEquipmentCatalog(tab: string | null) {
   const [data, setData] = useState<CatalogData>(EMPTY)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -31,8 +32,9 @@ export function useEquipmentCatalog(tab: string) {
       setLoading(true)
       setError(null)
 
+      const categoriesQuery = supabase.from('categories').select('*').order('sort_order')
       const [categoriesRes, itemsRes, rulesRes] = await Promise.all([
-        supabase.from('categories').select('*').eq('tab', tab).order('sort_order'),
+        tab ? categoriesQuery.eq('tab', tab) : categoriesQuery,
         supabase
           .from('equipment_items')
           .select('*, equipment_options(*)')

@@ -57,7 +57,7 @@ export default function NumberField({
           {unit}. {helperText}
         </p>
       )}
-      {outOfRange && <p className="mt-1 text-xs text-red-600">Out of range ({min}–{max}{unit}).</p>}
+      {outOfRange && <p className="mt-1 text-xs text-red-600">Out of range ({min}–{max}{unit ? ` ${unit}` : ''}).</p>}
     </div>
   )
 }

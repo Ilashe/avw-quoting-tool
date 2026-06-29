@@ -21,7 +21,7 @@ export async function login(_prevState: LoginFormState, formData: FormData): Pro
     return { error: 'Invalid email or password.' }
   }
 
-  redirect('/quotes')
+  redirect('/splash')
 }
 
 export async function logout() {

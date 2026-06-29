@@ -29,7 +29,7 @@ export default function SelectField({
       <select
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/30"
+        className="mt-1 w-auto rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/30"
       >
         <option value="" disabled>
           {placeholder}

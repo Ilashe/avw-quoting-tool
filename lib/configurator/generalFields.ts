@@ -5,7 +5,7 @@
  * categories.tab only covering 'equipment' | 'backroom' | 'vacuum' | 'pos' | 'controller').
  */
 
-export type GeneralFieldWidget = 'text' | 'radio' | 'select'
+export type GeneralFieldWidget = 'text' | 'radio' | 'select' | 'address_autocomplete'
 
 export interface GeneralFieldOption {
   value: string
@@ -22,8 +22,7 @@ export interface GeneralFieldDef {
 
 export const generalFields: GeneralFieldDef[] = [
   { key: 'customer', label: 'Customer', widget: 'text', required: true },
-  { key: 'ship_to_state', label: 'Ship to State', widget: 'text', required: true },
-  { key: 'ship_to_country', label: 'Ship to Country', widget: 'text', required: true },
+  { key: 'ship_to_address', label: 'Ship to Address', widget: 'address_autocomplete', required: false },
   {
     key: 'equipment_drive_type',
     label: 'Equipment Drive Type',

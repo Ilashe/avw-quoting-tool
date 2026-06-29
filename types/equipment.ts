@@ -1,11 +1,13 @@
-export type FieldWidget = 'text' | 'radio' | 'select' | 'number' | 'select_range'
+export type FieldWidget = 'text' | 'radio' | 'select' | 'number' | 'select_range' | 'combobox_range' | 'pending'
 
 export interface EquipmentItemMetadata {
   field_key: string
   widget: FieldWidget
   required?: boolean
   helper_text?: string
-  // number widget only
+  helper_link_text?: string
+  helper_link_href?: string
+  // number / combobox_range widgets
   min?: number
   max?: number
   unit?: string

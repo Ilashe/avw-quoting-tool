@@ -34,7 +34,7 @@ select 'EQ-CONV-002', 'Conveyor Steel Type', cat.id, 0,
   '{"field_key": "conveyor_steel_type", "widget": "radio"}'::jsonb from cat
 union all
 select 'EQ-CONV-003', 'Conveyor Length', cat.id, 0,
-  '{"field_key": "conveyor_length", "widget": "number", "min": 40, "max": 165, "unit": "in", "allow_none": true, "helper_text": "Need something outside 40–165in? Contact support."}'::jsonb from cat
+  '{"field_key": "conveyor_length", "widget": "combobox_range", "min": 40, "max": 165, "unit": "ft", "allow_none": true, "helper_text": "Need something outside 40–165 ft?", "helper_link_text": "Contact tech support", "helper_link_href": "mailto:teamsales@avwequipment.com"}'::jsonb from cat
 union all
 select 'EQ-CONV-004', 'How Many Pieces of Open Pit', cat.id, 0,
   '{"field_key": "open_pit_count", "widget": "select_range", "min": 1, "max": 10}'::jsonb from cat

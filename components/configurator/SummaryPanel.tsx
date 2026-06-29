@@ -11,41 +11,42 @@ interface SummaryRow {
   value: string
 }
 
-/**
- * Live readout of every field with a value, across all tabs — General fields are always
- * visible; Equipment fields are filtered through the same dependency-rules engine the tab
- * itself uses, so a value left over in a now-hidden field (e.g. CTA Type after CTA is
- * switched back to No) doesn't show here either. Pricing isn't on the catalog yet — Total
- * stays $0.00 until that data arrives.
- */
 export default function SummaryPanel() {
   const values = useSelectionsStore((s) => s.values)
-  const { items, options, rules } = useEquipmentCatalog('equipment')
+  // null = all tabs; single fetch covers equipment, backroom, fixtures_signs, etc.
+  const { items, options, rules } = useEquipmentCatalog(null)
 
   const rows: SummaryRow[] = []
 
   for (const field of generalFields) {
     const raw = values[field.key]
     if (raw === null || raw === undefined || raw === '') continue
-    const label =
-      field.widget === 'text' ? String(raw) : field.options?.find((o) => o.value === raw)?.label ?? String(raw)
-    rows.push({ key: field.key, label: field.label, value: label })
+    // text and address_autocomplete: show raw string; radio/select: look up label
+    const displayValue =
+      field.widget === 'text' || field.widget === 'address_autocomplete'
+        ? String(raw)
+        : field.options?.find((o) => o.value === raw)?.label ?? String(raw)
+    rows.push({ key: field.key, label: field.label, value: displayValue })
   }
 
   for (const item of items) {
     const { field_key, widget, unit } = item.metadata
     const raw = values[field_key]
     if (raw === null || raw === undefined || raw === '') continue
+    if (widget === 'pending') continue
     if (!isFieldVisible(rules, values, field_key)) continue
 
-    const value =
-      widget === 'number'
-        ? raw === 'none'
-          ? 'None'
-          : `${raw}${unit ?? ''}`
-        : options.find((o) => o.item_id === item.id && o.option_value === raw)?.option_label ?? String(raw)
+    let displayValue: string
+    if (widget === 'number' || widget === 'combobox_range') {
+      displayValue = raw === 'none' ? 'None' : `${raw}${unit ? ' ' + unit : ''}`
+    } else if (widget === 'select_range') {
+      displayValue = `${raw}${unit ? ' ' + unit : ''}`
+    } else {
+      displayValue =
+        options.find((o) => o.item_id === item.id && o.option_value === raw)?.option_label ?? String(raw)
+    }
 
-    rows.push({ key: field_key, label: item.name, value })
+    rows.push({ key: field_key, label: item.name, value: displayValue })
   }
 
   return (

@@ -1,4 +1,7 @@
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
 import ConfiguratorShell from '@/components/configurator/ConfiguratorShell'
+import type { SelectionValue } from '@/store/selectionsStore'
 
 export default async function QuoteConfiguratorPage({
   params,
@@ -6,10 +9,35 @@ export default async function QuoteConfiguratorPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
-  // Phase 9 wires this up to a real saved quote. Until then, the id in the
-  // URL just stands in for the quote number so the shell has something to show.
-  const quoteNumber = id === 'new' ? 'AVW-DRAFT' : id.toUpperCase()
+  if (id === 'new') {
+    const { data, error } = await supabase
+      .from('quotes')
+      .insert({ user_id: user.id, customer_name: '', selections: {}, status: 'draft' })
+      .select('id')
+      .single()
+    if (error || !data) redirect('/quotes')
+    redirect(`/quotes/${data.id}`)
+  }
 
-  return <ConfiguratorShell quoteNumber={quoteNumber} revisionLabel="B1" />
+  const { data: quote, error } = await supabase
+    .from('quotes')
+    .select('id, customer_name, selections')
+    .eq('id', id)
+    .single()
+
+  if (error || !quote) redirect('/quotes')
+
+  return (
+    <ConfiguratorShell
+      key={quote.id}
+      quoteId={quote.id}
+      initialSelections={(quote.selections ?? {}) as Record<string, SelectionValue>}
+    />
+  )
 }

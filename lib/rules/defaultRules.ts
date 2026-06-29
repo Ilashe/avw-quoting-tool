@@ -6,7 +6,7 @@ export type SeedRule = Pick<
 >
 
 /**
- * Mirrors supabase/migrations/0003_equipment_conveyor_belt_entrance_presoak_hp.sql.
+ * Mirrors supabase/migrations/0003 + 0004.
  * Kept in sync by hand — the DB row is the source of truth at runtime, this is the
  * code-reviewable copy referenced by decision #2 in PROJECT_STATUS.md.
  */
@@ -66,5 +66,46 @@ export const defaultRules: SeedRule[] = [
     action_type: 'exclude',
     target_field: 'flight_spacing',
     target_value: '2in',
+  },
+  // Blower Room — Type of Blowers shown only for the matching colour
+  {
+    rule_name: 'eq_blower_seed_type_show_black',
+    trigger_field: 'blower_color',
+    trigger_value: 'black',
+    action_type: 'show',
+    target_field: 'type_of_blowers_black',
+    target_value: null,
+  },
+  {
+    rule_name: 'eq_blower_seed_type_show_orange',
+    trigger_field: 'blower_color',
+    trigger_value: 'orange',
+    action_type: 'show',
+    target_field: 'type_of_blowers_orange',
+    target_value: null,
+  },
+  {
+    rule_name: 'eq_blower_seed_type_show_green',
+    trigger_field: 'blower_color',
+    trigger_value: 'green',
+    action_type: 'show',
+    target_field: 'type_of_blowers_green',
+    target_value: null,
+  },
+  {
+    rule_name: 'eq_blower_seed_type_show_blue',
+    trigger_field: 'blower_color',
+    trigger_value: 'blue',
+    action_type: 'show',
+    target_field: 'type_of_blowers_blue',
+    target_value: null,
+  },
+  {
+    rule_name: 'eq_blower_seed_type_show_yellow',
+    trigger_field: 'blower_color',
+    trigger_value: 'yellow',
+    action_type: 'show',
+    target_field: 'type_of_blowers_yellow',
+    target_value: null,
   },
 ]

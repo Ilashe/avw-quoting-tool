@@ -5,6 +5,8 @@ export const TAB_ORDER = [
   'equipment',
   'backroom',
   'vacuum',
+  'fixtures_signs',
+  'misc_tunnel_equipment',
   'pos',
   'controller',
   'items',
@@ -17,6 +19,8 @@ export const TAB_LABELS: Record<TabKey, string> = {
   equipment: 'Equipment',
   backroom: 'Backroom',
   vacuum: 'Vacuum',
+  fixtures_signs: 'Fixtures & Signs',
+  misc_tunnel_equipment: 'Misc Tunnel Equip.',
   pos: 'POS',
   controller: 'Controller',
   items: 'Items',
@@ -27,6 +31,7 @@ interface ConfiguratorState {
   setActiveTab: (tab: TabKey) => void
   goNext: () => void
   goBack: () => void
+  reset: () => void
 }
 
 export const useConfiguratorStore = create<ConfiguratorState>((set, get) => ({
@@ -42,4 +47,5 @@ export const useConfiguratorStore = create<ConfiguratorState>((set, get) => ({
     const prev = TAB_ORDER[index - 1]
     if (prev) set({ activeTab: prev })
   },
+  reset: () => set({ activeTab: 'general' }),
 }))

@@ -7,8 +7,8 @@ import { isFieldVisible, getExcludedOptionValues } from '@/lib/rules/engine'
 import SectionAccordion from '../SectionAccordion'
 import CatalogField, { EMPTY_OPTIONS } from '../CatalogField'
 
-export default function EquipmentTab() {
-  const { categories, items, options, rules, loading, error } = useEquipmentCatalog('equipment')
+export default function MiscTunnelEquipmentTab() {
+  const { categories, items, options, rules, loading, error } = useEquipmentCatalog('misc_tunnel_equipment')
   const values = useSelectionsStore((s) => s.values)
 
   const optionsByItemId = useMemo(() => {
@@ -21,8 +21,8 @@ export default function EquipmentTab() {
     return map
   }, [options])
 
-  if (loading) return <p className="text-sm text-slate-500">Loading equipment catalog…</p>
-  if (error) return <p className="text-sm text-red-600">Couldn&apos;t load the equipment catalog: {error}</p>
+  if (loading) return <p className="text-sm text-slate-500">Loading misc. tunnel equipment catalog…</p>
+  if (error) return <p className="text-sm text-red-600">Couldn&apos;t load the misc. tunnel equipment catalog: {error}</p>
 
   return (
     <div className="space-y-4">

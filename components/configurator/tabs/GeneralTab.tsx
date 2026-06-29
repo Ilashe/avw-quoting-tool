@@ -5,6 +5,7 @@ import { useSelectionsStore } from '@/store/selectionsStore'
 import TextField from '../fields/TextField'
 import RadioGroup from '../fields/RadioGroup'
 import SelectField from '../fields/SelectField'
+import AddressAutocompleteField from '../fields/AddressAutocompleteField'
 
 export default function GeneralTab() {
   const values = useSelectionsStore((s) => s.values)
@@ -14,6 +15,18 @@ export default function GeneralTab() {
     <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-5">
       {generalFields.map((field) => {
         const value = values[field.key] ?? null
+
+        if (field.widget === 'address_autocomplete') {
+          return (
+            <AddressAutocompleteField
+              key={field.key}
+              label={field.label}
+              required={field.required}
+              value={typeof value === 'string' ? value : ''}
+              onChange={(v) => setField(field.key, v)}
+            />
+          )
+        }
 
         if (field.widget === 'text') {
           return (

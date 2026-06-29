@@ -4,11 +4,10 @@ import { useMemo } from 'react'
 import { useEquipmentCatalog } from '@/lib/catalog/useEquipmentCatalog'
 import { useSelectionsStore } from '@/store/selectionsStore'
 import { isFieldVisible, getExcludedOptionValues } from '@/lib/rules/engine'
-import SectionAccordion from '../SectionAccordion'
 import CatalogField, { EMPTY_OPTIONS } from '../CatalogField'
 
-export default function EquipmentTab() {
-  const { categories, items, options, rules, loading, error } = useEquipmentCatalog('equipment')
+export default function FixturesSignsTab() {
+  const { categories, items, options, rules, loading, error } = useEquipmentCatalog('fixtures_signs')
   const values = useSelectionsStore((s) => s.values)
 
   const optionsByItemId = useMemo(() => {
@@ -21,26 +20,26 @@ export default function EquipmentTab() {
     return map
   }, [options])
 
-  if (loading) return <p className="text-sm text-slate-500">Loading equipment catalog…</p>
-  if (error) return <p className="text-sm text-red-600">Couldn&apos;t load the equipment catalog: {error}</p>
+  if (loading) return <p className="text-sm text-slate-500">Loading fixtures &amp; signs catalog…</p>
+  if (error) return <p className="text-sm text-red-600">Couldn&apos;t load the fixtures &amp; signs catalog: {error}</p>
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {categories.map((category) => {
         const categoryItems = items
           .filter((item) => item.category_id === category.id)
           .sort((a, b) => a.sku.localeCompare(b.sku))
 
-        const allFilled = categoryItems.every((item) => {
-          const fk = item.metadata.field_key
-          if (!isFieldVisible(rules, values, fk)) return true
-          if (item.metadata.widget === 'pending') return true
-          const v = values[fk]
-          return v !== null && v !== undefined && v !== ''
-        })
+        const visibleItems = categoryItems.filter((item) =>
+          isFieldVisible(rules, values, item.metadata.field_key)
+        )
+        if (visibleItems.length === 0) return null
 
         return (
-          <SectionAccordion key={category.id} title={category.display_name} allFilled={allFilled}>
+          <div key={category.id} className="space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {category.display_name}
+            </p>
             {categoryItems.map((item) => {
               const fieldKey = item.metadata.field_key
               const visible = isFieldVisible(rules, values, fieldKey)
@@ -58,7 +57,7 @@ export default function EquipmentTab() {
                 />
               )
             })}
-          </SectionAccordion>
+          </div>
         )
       })}
     </div>

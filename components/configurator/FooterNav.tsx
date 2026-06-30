@@ -2,7 +2,13 @@
 
 import { TAB_LABELS, TAB_ORDER, useConfiguratorStore } from '@/store/configuratorStore'
 
-export default function FooterNav() {
+interface FooterNavProps {
+  onFinish: () => void
+  isComplete: boolean
+  finishing?: boolean
+}
+
+export default function FooterNav({ onFinish, isComplete, finishing = false }: FooterNavProps) {
   const activeTab = useConfiguratorStore((s) => s.activeTab)
   const goBack = useConfiguratorStore((s) => s.goBack)
   const goNext = useConfiguratorStore((s) => s.goNext)
@@ -22,14 +28,28 @@ export default function FooterNav() {
       >
         ← Back
       </button>
+
       {isLast ? (
         <button
           type="button"
-          disabled
-          title="Quote saving is built in Phase 9"
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white opacity-50"
+          onClick={onFinish}
+          disabled={finishing}
+          className={`flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-semibold text-white transition disabled:opacity-60 ${
+            isComplete
+              ? 'bg-emerald-600 hover:bg-emerald-700'
+              : 'bg-brand hover:bg-ink'
+          }`}
         >
-          Save Quote
+          {finishing ? (
+            <>
+              <span className="size-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              Finishing…
+            </>
+          ) : isComplete ? (
+            <>✓ Finished</>
+          ) : (
+            <>Finish →</>
+          )}
         </button>
       ) : (
         <button

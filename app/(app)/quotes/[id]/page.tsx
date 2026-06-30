@@ -27,7 +27,7 @@ export default async function QuoteConfiguratorPage({
 
   const { data: quote, error } = await supabase
     .from('quotes')
-    .select('id, customer_name, selections')
+    .select('id, customer_name, selections, status')
     .eq('id', id)
     .single()
 
@@ -38,6 +38,7 @@ export default async function QuoteConfiguratorPage({
       key={quote.id}
       quoteId={quote.id}
       initialSelections={(quote.selections ?? {}) as Record<string, SelectionValue>}
+      initialStatus={(quote.status as string) ?? 'draft'}
     />
   )
 }

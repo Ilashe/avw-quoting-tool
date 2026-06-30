@@ -9,6 +9,8 @@ export interface QuoteSummary {
   id: string
   customer_name: string
   status: string
+  is_pinned: boolean
+  total_value: number
   created_at: string
   updated_at: string
 }
@@ -23,8 +25,22 @@ async function authedSupabase() {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
-  return { supabase, userId: user.id }
+  return { supabase, userId: user.id, user }
 }
+
+// ── user ──────────────────────────────────────────────────────────────────────
+
+export async function getUserName(): Promise<string> {
+  const { user } = await authedSupabase()
+  const meta = (user.user_metadata ?? {}) as Record<string, string>
+  const full = meta.full_name ?? meta.name ?? ''
+  if (full) return full.split(' ')[0]
+  // Fall back to the part of the email before @
+  const local = (user.email ?? 'there').split('@')[0]
+  return local.charAt(0).toUpperCase() + local.slice(1)
+}
+
+// ── create / read ─────────────────────────────────────────────────────────────
 
 export async function createNewQuote(): Promise<string> {
   const { supabase, userId } = await authedSupabase()
@@ -36,6 +52,35 @@ export async function createNewQuote(): Promise<string> {
   if (error || !data) throw new Error(error?.message ?? 'Failed to create quote')
   return data.id as string
 }
+
+export async function getQuote(quoteId: string): Promise<QuoteRow | null> {
+  const { supabase } = await authedSupabase()
+  const { data } = await supabase.from('quotes').select('*').eq('id', quoteId).single()
+  return (data as QuoteRow) ?? null
+}
+
+export async function getQuoteSelections(
+  quoteId: string
+): Promise<Record<string, SelectionValue>> {
+  const { supabase } = await authedSupabase()
+  const { data } = await supabase
+    .from('quotes')
+    .select('selections')
+    .eq('id', quoteId)
+    .single()
+  return ((data as { selections: Record<string, SelectionValue> } | null)?.selections ?? {})
+}
+
+export async function getUserQuotes(): Promise<QuoteSummary[]> {
+  const { supabase } = await authedSupabase()
+  const { data } = await supabase
+    .from('quotes')
+    .select('id, customer_name, status, is_pinned, total_value, created_at, updated_at')
+    .order('updated_at', { ascending: false })
+  return (data ?? []) as QuoteSummary[]
+}
+
+// ── save ──────────────────────────────────────────────────────────────────────
 
 export async function saveQuote(
   quoteId: string,
@@ -49,20 +94,64 @@ export async function saveQuote(
     .eq('id', quoteId)
 }
 
-export async function getQuote(quoteId: string): Promise<QuoteRow | null> {
+export async function finishQuote(
+  quoteId: string,
+  selections: Record<string, SelectionValue>
+): Promise<void> {
   const { supabase } = await authedSupabase()
-  const { data } = await supabase.from('quotes').select('*').eq('id', quoteId).single()
-  return (data as QuoteRow) ?? null
+  const customerName = String(selections['customer'] ?? '')
+  await supabase
+    .from('quotes')
+    .update({ selections, customer_name: customerName, status: 'complete' })
+    .eq('id', quoteId)
+  revalidatePath('/quotes')
 }
 
-export async function getUserQuotes(): Promise<QuoteSummary[]> {
+export async function revertToDraft(quoteId: string): Promise<void> {
   const { supabase } = await authedSupabase()
-  const { data } = await supabase
-    .from('quotes')
-    .select('id, customer_name, status, created_at, updated_at')
-    .order('updated_at', { ascending: false })
-  return (data ?? []) as QuoteSummary[]
+  await supabase.from('quotes').update({ status: 'draft' }).eq('id', quoteId)
 }
+
+// ── pin ───────────────────────────────────────────────────────────────────────
+
+export async function togglePin(quoteId: string, currentlyPinned: boolean): Promise<void> {
+  const { supabase } = await authedSupabase()
+  await supabase.from('quotes').update({ is_pinned: !currentlyPinned }).eq('id', quoteId)
+  revalidatePath('/quotes')
+}
+
+// ── clone ─────────────────────────────────────────────────────────────────────
+
+export async function cloneQuote(quoteId: string): Promise<QuoteSummary> {
+  const { supabase, userId } = await authedSupabase()
+  const { data: original } = await supabase
+    .from('quotes')
+    .select('*')
+    .eq('id', quoteId)
+    .single()
+  if (!original) throw new Error('Quote not found')
+
+  const clonedName = original.customer_name
+    ? `Copy of ${original.customer_name}`
+    : 'Copy'
+
+  const { data, error } = await supabase
+    .from('quotes')
+    .insert({
+      user_id: userId,
+      customer_name: clonedName,
+      selections: original.selections,
+      status: 'draft',
+    })
+    .select('id, customer_name, status, is_pinned, total_value, created_at, updated_at')
+    .single()
+
+  if (error || !data) throw new Error(error?.message ?? 'Failed to clone quote')
+  revalidatePath('/quotes')
+  return data as QuoteSummary
+}
+
+// ── delete ────────────────────────────────────────────────────────────────────
 
 export async function deleteQuote(quoteId: string): Promise<void> {
   const { supabase } = await authedSupabase()

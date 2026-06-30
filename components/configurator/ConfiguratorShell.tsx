@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConfiguratorStore } from '@/store/configuratorStore'
 import { useSelectionsStore, type SelectionValue } from '@/store/selectionsStore'
-import { saveQuote, createNewQuote } from '@/lib/actions/quotes'
+import { saveQuote, createNewQuote, finishQuote, revertToDraft } from '@/lib/actions/quotes'
 import TopBar from './TopBar'
 import TabNav from './TabNav'
 import SummaryPanel from './SummaryPanel'
@@ -34,9 +34,11 @@ const TAB_COMPONENTS = {
 export default function ConfiguratorShell({
   quoteId,
   initialSelections,
+  initialStatus,
 }: {
   quoteId: string
   initialSelections: Record<string, SelectionValue>
+  initialStatus: string
 }) {
   const router = useRouter()
   const activeTab = useConfiguratorStore((s) => s.activeTab)
@@ -47,33 +49,45 @@ export default function ConfiguratorShell({
   const ActiveTabContent = TAB_COMPONENTS[activeTab]
 
   const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState(initialStatus)
+  const [finishing, setFinishing] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Always holds the latest values without making them a useEffect dependency
   const latestValuesRef = useRef(values)
   latestValuesRef.current = values
+  // Latest status without making it an effect dependency
+  const statusRef = useRef(initialStatus)
+  statusRef.current = status
   // Skip auto-save that fires immediately after store hydration
   const skipNextSave = useRef(true)
-  // Set true when handleNewQuote has already flushed; prevents unmount cleanup from
-  // overwriting the saved quote with {} after resetSelections() is processed by React.
+  // Set true when handleNewQuote/handleFinish has already flushed; prevents unmount
+  // cleanup from overwriting the saved quote with {} after resetSelections() runs.
   const explicitlySaved = useRef(false)
 
-  // Hydrate the store from DB data whenever quoteId changes (including initial mount).
-  // key={quoteId} on this component in the page ensures a full remount on quote switch,
-  // but the effect also handles in-component navigation.
+  // Hydrate the store from DB data whenever quoteId changes.
   useEffect(() => {
     skipNextSave.current = true
     explicitlySaved.current = false
+    setStatus(initialStatus)
     resetConfigurator()
     initSelections(initialSelections)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
 
-  // Auto-save: debounced 2 s after any selection change; skips the hydration flush above.
+  // Auto-save: debounced 2 s after any selection change.
+  // Also auto-reverts status to draft when the user edits a completed quote.
   useEffect(() => {
     if (skipNextSave.current) {
       skipNextSave.current = false
       return
     }
+
+    // Revert to draft the moment the user makes any edit on a completed quote
+    if (statusRef.current === 'complete') {
+      setStatus('draft')
+      revertToDraft(quoteId) // fire-and-forget, non-blocking
+    }
+
     setSaving(true)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
@@ -84,8 +98,6 @@ export default function ConfiguratorShell({
   }, [values])
 
   // Flush any pending save on unmount (e.g. clicking "← Quotes" mid-edit).
-  // Skip if handleNewQuote already flushed explicitly — by then resetSelections() may
-  // have run and latestValuesRef.current could be {} which would wipe the saved data.
   useEffect(() => {
     return () => {
       if (explicitlySaved.current) return
@@ -95,8 +107,18 @@ export default function ConfiguratorShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
 
+  // Finish: save + mark complete + navigate to dashboard
+  const handleFinish = useCallback(async () => {
+    setFinishing(true)
+    explicitlySaved.current = true
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    await finishQuote(quoteId, latestValuesRef.current)
+    setStatus('complete')
+    setFinishing(false)
+    router.push('/quotes')
+  }, [quoteId, router])
+
   const handleNewQuote = useCallback(async () => {
-    // Mark as explicitly saved so the unmount cleanup doesn't overwrite with stale {} state.
     explicitlySaved.current = true
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     await saveQuote(quoteId, latestValuesRef.current)
@@ -116,7 +138,11 @@ export default function ConfiguratorShell({
         </div>
         <SummaryPanel />
       </div>
-      <FooterNav />
+      <FooterNav
+        onFinish={handleFinish}
+        isComplete={status === 'complete'}
+        finishing={finishing}
+      />
     </div>
   )
 }

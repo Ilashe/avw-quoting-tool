@@ -25,7 +25,20 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user }, error } = await supabase.auth.getUser()
+
+  // Stale or revoked refresh token — clear every sb-* cookie so the browser
+  // stops sending the dead token on every request (which is what causes the
+  // repeated console error). Then redirect to login for a fresh sign-in.
+  if (error && (error as { code?: string }).code === 'refresh_token_not_found') {
+    const loginUrl = new URL('/login', request.url)
+    const clearResponse = NextResponse.redirect(loginUrl)
+    request.cookies
+      .getAll()
+      .filter((c) => c.name.startsWith('sb-'))
+      .forEach((c) => clearResponse.cookies.delete(c.name))
+    return clearResponse
+  }
 
   const isPublicPath = PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path))
 

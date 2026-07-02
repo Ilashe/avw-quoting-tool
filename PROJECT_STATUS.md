@@ -1,6 +1,6 @@
 # AVW Equipment Configurator — Project Status & Handoff
 
-Last updated: 2026-06-28
+Last updated: 2026-07-01
 
 ---
 
@@ -289,7 +289,7 @@ All directories above already exist on disk (empty, awaiting Phase 1+ content). 
 | 4 | General Tab (all fields, validation, Zustand wired) | 🔶 **PARTIAL** (2026-06-28) — fields wired; Ship to State/Country removed; Ship to Address (Google Places autocomplete) added; validation still pending |
 | 5 | Admin catalog panel (CRUD + CSV import) | pending |
 | 6 | Equipment Tab (all accordion sections, live prices) | 🔶 **PARTIAL** (2026-06-28) — Conveyor, Belt Specs, Entrance Module, Presoak, High Pressure Equipment done; Friction Equipment = placeholder (specs not provided); remaining Equipment sub-tabs pending client data; no pricing yet |
-| 7 | Backroom Tab (incl. Water Treatment dependency) | pending — awaiting client catalog data |
+| 7 | Backroom Tab (incl. Water Treatment dependency) | 🔶 **PARTIAL** (2026-07-01) — migration 0007 written; Hydraulics + Water sections seeded; HP Equipment extended; run 0007 in Supabase SQL Editor to apply |
 | 8 | Vacuum + 2 NEW tabs (Fixtures & Signs, Misc Tunnel Equipment) + POS + Controller | 🔶 **PARTIAL** (2026-06-28) — Vacuum/POS/Controller = placeholders; Fixtures & Signs + Misc Tunnel Equipment tabs added as placeholders; all 5 await client catalog data |
 | 9 | Quote management: save/load/revisions/dashboard/diff | ⚠️ **CRITICAL / pending** — Save button is still disabled; no quote persistence, no dashboard list, no revision history |
 | 10 | Items tab: manual line items, discounts, notes | pending |
@@ -536,6 +536,39 @@ selection list can be navigated independently of the page scroll.
    position untouched.
 4. Confirmed working via `npm run dev` directly (no `next build`/`next start` workaround
    needed) — the earlier Turbopack `dev` fix is holding up under this layout change too.
+
+### What we did 2026-07-01 — migration 0007: HP equipment extension + Hydraulics + Water
+
+1. **Extended High Pressure Equipment section** (Equipment tab) with 8 new fields:
+   - "High Pressure Pumping Station" (Yes/No radio, `EQ-HP-004`)
+   - "How many pump stations?" (select_range 1–5, `EQ-HP-005`) — shown only when Pumping Station = Yes (dependency rule `eq_hp_007_pump_count_show`)
+   - WA1P Single Air Control Panel – How many? (select_range 1–5, `EQ-HP-006`)
+   - WA2P Dual Air Control Panel – How many? (select_range 1–5, `EQ-HP-007`)
+   - WA1-SK-2018 Retracted Dual Air Assist Kit – How many? (select_range 1–5, `EQ-HP-008`)
+   - Water Solenoid ½" – How many? (select_range 1–7, `EQ-HP-009`)
+   - Water Solenoid ¾" – How many? (select_range 1–7, `EQ-HP-010`)
+   - Water Solenoid 1" – How many? (select_range 1–7, `EQ-HP-011`)
+   - Air Assist Panel and Water Solenoid fields are always visible (no condition).
+
+2. **New Backroom/Hydraulics section** (`BR-HYD-001` to `BR-HYD-003`):
+   - Hydraulic Units radio (None / 1–8 Ports)
+   - Hydraulic Units – How many? (select_range 1–5) — hidden when type = None
+   - Air Compressor radio (None / 4 compressor models)
+
+3. **New Backroom/Water section** (`BR-WAT-001` to `BR-WAT-008`):
+   - Water Treatment Center — `widget: pending` (options from Sobrite TBD)
+   - Water Reclaim System radio (120 GPM Reclaim System / No)
+   - Reverse Osmosis System radio (Purclean 15,000 / Purclean 6,000 / No)
+   - Single RO/Reject Tank radio (Yes / No)
+   - Spot Free Water Tank radio (3 options + None)
+   - Reject Water Tank radio (3 options + None)
+   - Water Boiler radio (PVI 400,000 BTU / PVI 800,000 BTU)
+   - Water Softener radio (Yes / No)
+
+4. **Client must run** `supabase/migrations/0007_hp_hydraulics_water.sql` in the Supabase SQL Editor
+   for any of this to appear in the app. Migration is re-runnable (deletes by exact SKU before inserting).
+
+---
 
 ### What we did 2026-06-28 — UI polish + new tabs + Google Places + state reset
 

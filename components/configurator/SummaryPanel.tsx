@@ -1,9 +1,12 @@
 'use client'
 
 import { useSelectionsStore } from '@/store/selectionsStore'
+import { useLineItemsStore } from '@/store/lineItemsStore'
 import { useEquipmentCatalog } from '@/lib/catalog/useEquipmentCatalog'
 import { generalFields } from '@/lib/configurator/generalFields'
 import { isFieldVisible } from '@/lib/rules/engine'
+import { computeQuoteTotal } from '@/lib/pricing'
+import { formatCurrency } from '@/lib/format'
 
 interface SummaryRow {
   key: string
@@ -13,6 +16,8 @@ interface SummaryRow {
 
 export default function SummaryPanel() {
   const values = useSelectionsStore((s) => s.values)
+  const lineItems = useLineItemsStore((s) => s.items)
+  const total = computeQuoteTotal(lineItems, values['items_discount_percent'] as number | null)
   // null = all tabs; single fetch covers equipment, backroom, fixtures_signs, etc.
   const { items, options, rules } = useEquipmentCatalog(null)
 
@@ -55,24 +60,46 @@ export default function SummaryPanel() {
         <p className="text-[11px] uppercase tracking-wide text-slate-300">Quote Summary</p>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {rows.length === 0 ? (
+        {rows.length === 0 && lineItems.length === 0 ? (
           <p className="text-sm text-slate-400">
             No items selected yet. Choices you make across each tab will appear here.
           </p>
         ) : (
-          <ul className="space-y-2 text-sm">
-            {rows.map((row) => (
-              <li key={row.key} className="flex justify-between gap-3">
-                <span className="text-slate-300">{row.label}</span>
-                <span className="text-right font-medium">{row.value}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            {rows.length > 0 && (
+              <ul className="space-y-2 text-sm">
+                {rows.map((row) => (
+                  <li key={row.key} className="flex justify-between gap-3">
+                    <span className="text-slate-300">{row.label}</span>
+                    <span className="text-right font-medium">{row.value}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {lineItems.length > 0 && (
+              <div className={rows.length > 0 ? 'mt-4 border-t border-white/10 pt-3' : ''}>
+                <p className="mb-2 text-[11px] uppercase tracking-wide text-slate-300">Line Items</p>
+                <ul className="space-y-2 text-sm">
+                  {lineItems.map((item) => (
+                    <li key={item.id} className="flex justify-between gap-3">
+                      <span className="text-slate-300">
+                        {item.quantity}× {item.description}
+                      </span>
+                      <span className="text-right font-medium">
+                        {formatCurrency(item.unit_price * item.quantity)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         )}
       </div>
       <div className="flex items-center justify-between border-t border-white/10 px-4 py-3">
         <span className="text-sm font-semibold uppercase tracking-wide">Total</span>
-        <span className="font-mono text-lg font-semibold">$0.00</span>
+        <span className="font-mono text-lg font-semibold">{formatCurrency(total)}</span>
       </div>
     </aside>
   )

@@ -461,7 +461,7 @@ function QuoteRow({
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-3 text-xs text-slate-400">
-          <span>Edited {timeAgo(quote.updated_at)}</span>
+          <span suppressHydrationWarning>Edited {timeAgo(quote.updated_at)}</span>
           <span className="text-slate-200">·</span>
           <span>Created {shortDate(quote.created_at)}</span>
           <span className="text-slate-200">·</span>
@@ -470,7 +470,7 @@ function QuoteRow({
       </div>
 
       {/* Actions */}
-      <div className="flex shrink-0 items-center gap-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+      <div className="flex shrink-0 items-center gap-1.5">
         {/* Preview */}
         <button
           type="button"

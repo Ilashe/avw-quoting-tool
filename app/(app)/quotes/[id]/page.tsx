@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import ConfiguratorShell from '@/components/configurator/ConfiguratorShell'
 import type { SelectionValue } from '@/store/selectionsStore'
+import type { LineItem } from '@/types/parts'
 
 export default async function QuoteConfiguratorPage({
   params,
@@ -27,7 +28,7 @@ export default async function QuoteConfiguratorPage({
 
   const { data: quote, error } = await supabase
     .from('quotes')
-    .select('id, customer_name, selections, status')
+    .select('id, customer_name, selections, line_items, status')
     .eq('id', id)
     .single()
 
@@ -38,6 +39,7 @@ export default async function QuoteConfiguratorPage({
       key={quote.id}
       quoteId={quote.id}
       initialSelections={(quote.selections ?? {}) as Record<string, SelectionValue>}
+      initialLineItems={(quote.line_items ?? []) as LineItem[]}
       initialStatus={(quote.status as string) ?? 'draft'}
     />
   )

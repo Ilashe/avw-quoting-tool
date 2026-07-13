@@ -2,6 +2,9 @@
 
 import Link from 'next/link'
 import { useSelectionsStore } from '@/store/selectionsStore'
+import { useLineItemsStore } from '@/store/lineItemsStore'
+import { computeQuoteTotal } from '@/lib/pricing'
+import { formatCurrency } from '@/lib/format'
 
 export default function TopBar({
   saving,
@@ -11,6 +14,9 @@ export default function TopBar({
   onNewQuote: () => void
 }) {
   const customerName = useSelectionsStore((s) => s.values['customer'] as string | null | undefined)
+  const discountPercent = useSelectionsStore((s) => s.values['items_discount_percent'] as number | null)
+  const lineItems = useLineItemsStore((s) => s.items)
+  const total = computeQuoteTotal(lineItems, discountPercent)
 
   return (
     <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
@@ -36,7 +42,7 @@ export default function TopBar({
       <div className="flex items-center gap-4 text-sm">
         <div className="text-right">
           <p className="text-[11px] uppercase tracking-wide text-slate-400">Total</p>
-          <p className="font-mono font-semibold text-ink">$0.00</p>
+          <p className="font-mono font-semibold text-ink">{formatCurrency(total)}</p>
         </div>
         <Link
           href="/quotes"

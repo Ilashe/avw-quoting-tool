@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useConfiguratorStore } from '@/store/configuratorStore'
 import { useSelectionsStore, type SelectionValue } from '@/store/selectionsStore'
+import { useLineItemsStore } from '@/store/lineItemsStore'
 import { saveQuote, createNewQuote, finishQuote, revertToDraft } from '@/lib/actions/quotes'
+import type { LineItem } from '@/types/parts'
 import TopBar from './TopBar'
 import TabNav from './TabNav'
 import SummaryPanel from './SummaryPanel'
@@ -34,10 +36,12 @@ const TAB_COMPONENTS = {
 export default function ConfiguratorShell({
   quoteId,
   initialSelections,
+  initialLineItems,
   initialStatus,
 }: {
   quoteId: string
   initialSelections: Record<string, SelectionValue>
+  initialLineItems: LineItem[]
   initialStatus: string
 }) {
   const router = useRouter()
@@ -46,6 +50,9 @@ export default function ConfiguratorShell({
   const values = useSelectionsStore((s) => s.values)
   const initSelections = useSelectionsStore((s) => s.init)
   const resetSelections = useSelectionsStore((s) => s.reset)
+  const lineItems = useLineItemsStore((s) => s.items)
+  const initLineItems = useLineItemsStore((s) => s.init)
+  const resetLineItems = useLineItemsStore((s) => s.reset)
   const ActiveTabContent = TAB_COMPONENTS[activeTab]
 
   const [saving, setSaving] = useState(false)
@@ -55,6 +62,8 @@ export default function ConfiguratorShell({
   // Always holds the latest values without making them a useEffect dependency
   const latestValuesRef = useRef(values)
   latestValuesRef.current = values
+  const latestLineItemsRef = useRef(lineItems)
+  latestLineItemsRef.current = lineItems
   // Latest status without making it an effect dependency
   const statusRef = useRef(initialStatus)
   statusRef.current = status
@@ -71,10 +80,11 @@ export default function ConfiguratorShell({
     setStatus(initialStatus)
     resetConfigurator()
     initSelections(initialSelections)
+    initLineItems(initialLineItems)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
 
-  // Auto-save: debounced 2 s after any selection change.
+  // Auto-save: debounced 2 s after any selection or line item change.
   // Also auto-reverts status to draft when the user edits a completed quote.
   useEffect(() => {
     if (skipNextSave.current) {
@@ -91,18 +101,18 @@ export default function ConfiguratorShell({
     setSaving(true)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
-      await saveQuote(quoteId, latestValuesRef.current)
+      await saveQuote(quoteId, latestValuesRef.current, latestLineItemsRef.current)
       setSaving(false)
     }, 2000)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [values])
+  }, [values, lineItems])
 
   // Flush any pending save on unmount (e.g. clicking "← Quotes" mid-edit).
   useEffect(() => {
     return () => {
       if (explicitlySaved.current) return
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      saveQuote(quoteId, latestValuesRef.current)
+      saveQuote(quoteId, latestValuesRef.current, latestLineItemsRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
@@ -112,7 +122,7 @@ export default function ConfiguratorShell({
     setFinishing(true)
     explicitlySaved.current = true
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    await finishQuote(quoteId, latestValuesRef.current)
+    await finishQuote(quoteId, latestValuesRef.current, latestLineItemsRef.current)
     setStatus('complete')
     setFinishing(false)
     router.push('/quotes')
@@ -121,12 +131,13 @@ export default function ConfiguratorShell({
   const handleNewQuote = useCallback(async () => {
     explicitlySaved.current = true
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    await saveQuote(quoteId, latestValuesRef.current)
+    await saveQuote(quoteId, latestValuesRef.current, latestLineItemsRef.current)
     resetSelections()
+    resetLineItems()
     resetConfigurator()
     const newId = await createNewQuote()
     router.push(`/quotes/${newId}`)
-  }, [quoteId, resetSelections, resetConfigurator, router])
+  }, [quoteId, resetSelections, resetLineItems, resetConfigurator, router])
 
   return (
     <div className="flex flex-col">

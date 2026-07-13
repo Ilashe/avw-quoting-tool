@@ -1,6 +1,6 @@
 # AVW Equipment Configurator — Project Status & Handoff
 
-Last updated: 2026-07-01
+Last updated: 2026-07-06
 
 ---
 
@@ -291,7 +291,7 @@ All directories above already exist on disk (empty, awaiting Phase 1+ content). 
 | 6 | Equipment Tab (all accordion sections, live prices) | 🔶 **PARTIAL** (2026-06-28) — Conveyor, Belt Specs, Entrance Module, Presoak, High Pressure Equipment done; Friction Equipment = placeholder (specs not provided); remaining Equipment sub-tabs pending client data; no pricing yet |
 | 7 | Backroom Tab (incl. Water Treatment dependency) | 🔶 **PARTIAL** (2026-07-01) — migration 0007 written; Hydraulics + Water sections seeded; HP Equipment extended; run 0007 in Supabase SQL Editor to apply |
 | 8 | Vacuum + 2 NEW tabs (Fixtures & Signs, Misc Tunnel Equipment) + POS + Controller | 🔶 **PARTIAL** (2026-06-28) — Vacuum/POS/Controller = placeholders; Fixtures & Signs + Misc Tunnel Equipment tabs added as placeholders; all 5 await client catalog data |
-| 9 | Quote management: save/load/revisions/dashboard/diff | ⚠️ **CRITICAL / pending** — Save button is still disabled; no quote persistence, no dashboard list, no revision history |
+| 9 | Quote management: save/load/revisions/dashboard/diff | ✅ **COMPLETE** (2026-06-30) — auto-save, quotes table + RLS, dashboard with greeting/stats/cards/sort/search/pin/clone/delete, Finish flow, splash screen, key={quoteId} remount guard |
 | 10 | Items tab: manual line items, discounts, notes | pending |
 | 11 | PDF generation: Proforma Invoice + Proposal (DEFERRED) | deferred — starts after Phase 9 validated |
 | 12 | Polish, error handling, Vercel deploy | pending |
@@ -537,36 +537,53 @@ selection list can be navigated independently of the page scroll.
 4. Confirmed working via `npm run dev` directly (no `next build`/`next start` workaround
    needed) — the earlier Turbopack `dev` fix is holding up under this layout change too.
 
-### What we did 2026-07-01 — migration 0007: HP equipment extension + Hydraulics + Water
+### What we did 2026-06-30 — Phase 9: Quote save/load/dashboard COMPLETE
 
-1. **Extended High Pressure Equipment section** (Equipment tab) with 8 new fields:
-   - "High Pressure Pumping Station" (Yes/No radio, `EQ-HP-004`)
-   - "How many pump stations?" (select_range 1–5, `EQ-HP-005`) — shown only when Pumping Station = Yes (dependency rule `eq_hp_007_pump_count_show`)
-   - WA1P Single Air Control Panel – How many? (select_range 1–5, `EQ-HP-006`)
-   - WA2P Dual Air Control Panel – How many? (select_range 1–5, `EQ-HP-007`)
-   - WA1-SK-2018 Retracted Dual Air Assist Kit – How many? (select_range 1–5, `EQ-HP-008`)
-   - Water Solenoid ½" – How many? (select_range 1–7, `EQ-HP-009`)
-   - Water Solenoid ¾" – How many? (select_range 1–7, `EQ-HP-010`)
-   - Water Solenoid 1" – How many? (select_range 1–7, `EQ-HP-011`)
-   - Air Assist Panel and Water Solenoid fields are always visible (no condition).
+1. **Auto-save** — debounced 2 s, with `skipNextSave` guard to suppress the hydration-triggered flush that was causing spurious saves on tab load.
+2. **`quotes` table** — `supabase/migrations/0005_quotes.sql`. RLS pattern: `(select auth.uid()) = quotes.user_id` (subquery form prevents planner issue on Supabase).
+3. **`supabase/migrations/0006`** — added `is_pinned boolean` and `total_value numeric(10,2)` columns to `quotes`.
+4. **Quotes dashboard** (`/quotes`): greeting banner by time-of-day, stat cards (total/draft/complete), template cards, tab pills (All / Drafts / History), sort (Newest / Oldest / A–Z / Z–A), full-text search, date grouping, pin/unpin, clone, quick-preview panel, estimated value per card, delete.
+5. **Finish flow** — last tab "Finish →" button marks quote `complete` + redirects to dashboard. Any edit on a complete quote auto-reverts it to `draft`.
+6. **Splash screen** — 500 ms animated splash between login redirect and dashboard render.
+7. **`key={quoteId}`** on `ConfiguratorShell` forces a full React remount on quote switch, eliminating stale store hydration.
 
-2. **New Backroom/Hydraulics section** (`BR-HYD-001` to `BR-HYD-003`):
-   - Hydraulic Units radio (None / 1–8 Ports)
-   - Hydraulic Units – How many? (select_range 1–5) — hidden when type = None
-   - Air Compressor radio (None / 4 compressor models)
+### What we did 2026-07-01 — migration 0007: Backroom Chemical Panels extended + Hydraulics + Water
 
-3. **New Backroom/Water section** (`BR-WAT-001` to `BR-WAT-008`):
-   - Water Treatment Center — `widget: pending` (options from Sobrite TBD)
-   - Water Reclaim System radio (120 GPM Reclaim System / No)
-   - Reverse Osmosis System radio (Purclean 15,000 / Purclean 6,000 / No)
-   - Single RO/Reject Tank radio (Yes / No)
-   - Spot Free Water Tank radio (3 options + None)
-   - Reject Water Tank radio (3 options + None)
-   - Water Boiler radio (PVI 400,000 BTU / PVI 800,000 BTU)
-   - Water Softener radio (Yes / No)
+All new fields for this session are in the **Backroom tab**, not the Equipment tab. Earlier drafts
+of this migration incorrectly placed items in the Equipment tab (`EQ-HP-004` through `EQ-HP-011`)
+or a standalone "High Pressure Pumping" section — the final migration's cleanup block removes all
+those mistakes before re-inserting correctly.
+
+1. **Extended existing Backroom / Chemical Panels section** (`BR-CHEM-003` to `BR-CHEM-010`):
+   - `BR-CHEM-003` How Many Pump Stations? — select_range 1–5 (upgraded from text widget in 0004).
+     Shown only when High Pressure Pumping Station = Yes (trigger field from `BR-CHEM-002`, rule
+     `br_chem_007_pump_count_show`).
+   - `BR-CHEM-004` Air Assist Panels — Yes/No radio (always visible).
+   - `BR-CHEM-005` WA1P Single Air Control Panel – How many? — select_range 1–5 (shown when Air Assist = Yes)
+   - `BR-CHEM-006` WA2P Dual Air Control Panel – How many? — select_range 1–5 (shown when Air Assist = Yes)
+   - `BR-CHEM-007` WA1-SK-2018 Retracted Dual Air Assist Kit – How many? — select_range 1–5 (shown when Air Assist = Yes)
+   - `BR-CHEM-008` Water Solenoid ½" – How many? — select_range 1–7 (always visible)
+   - `BR-CHEM-009` Water Solenoid ¾" – How many? — select_range 1–7 (always visible)
+   - `BR-CHEM-010` Water Solenoid 1" – How many? — select_range 1–7 (always visible)
+
+2. **New Backroom / Hydraulics section** (sort_order 20, `BR-HYD-001` to `BR-HYD-003`):
+   - Hydraulic Units — radio (None / 1–8 Ports)
+   - Hydraulic Units – How many? — select_range 1–5 (hidden when type = None via `br_hyd_007_unit_qty_hide`)
+   - Air Compressor — radio (None / 4 compressor models)
+
+3. **New Backroom / Water section** (sort_order 30, `BR-WAT-001` to `BR-WAT-008`):
+   - Water Treatment Center — `widget: pending` (Sobrite options TBD)
+   - Water Reclaim System — radio (120 GPM Reclaim System / No)
+   - Reverse Osmosis System — radio (Purclean 15,000 / Purclean 6,000 / No)
+   - Single RO/Reject Tank — radio (Yes / No)
+   - Spot Free Water Tank — radio (3 tank options + None)
+   - Reject Water Tank — radio (3 tank options + None)
+   - Water Boiler — radio (PVI 400,000 BTU / PVI 800,000 BTU)
+   - Water Softener — radio (Yes / No)
 
 4. **Client must run** `supabase/migrations/0007_hp_hydraulics_water.sql` in the Supabase SQL Editor
-   for any of this to appear in the app. Migration is re-runnable (deletes by exact SKU before inserting).
+   for any of this to appear in the app. Migration is re-runnable (cleanup block deletes by exact SKU
+   before reinserting, including any items from earlier wrong runs).
 
 ---
 
@@ -619,6 +636,23 @@ selection list can be navigated independently of the page scroll.
 9. **SSR crash fixed in AddressAutocompleteField:** `setOptions()` from `@googlemaps/js-api-loader`
    internally references `window` — calling it at module level caused a `ReferenceError` during
    server-side rendering. Moved all Google Maps init inside `useEffect` (client-only).
+
+### What we did 2026-07-06 — skills setup + project context
+
+No code changes to the quoting tool this session. Work covered:
+- **JobBOSS² integration research** — confirmed feasible as Phase 13. Hook point: `finishQuote`
+  server action → `lib/actions/jobBoss.ts` → REST API. Post-build addition.
+- **quotation-app repo review** (`C:/Users/HomePC/Documents/Workflows/Nexucentri/quotation-app`)
+  — identified as the Phase 8 (Vacuum tab) foundation. Contains Eurovac III pricing data (15 central
+  unit models, VFD controls by HP/voltage, workstations by bay count) and calculation logic.
+  Recommendation: extract price data into `supabase/migrations/0008_vacuum.sql`, build VacuumTab
+  using the existing CatalogField renderer, port calculation logic as a utility function.
+- **Claude Code user-scope skills installed** at `~/.claude/commands/`:
+  design-mastery, mobile-app-ui-design, ux-ui-mastery, design-system-extractor, ui-ux-pro-max,
+  vercel-web-design-guidelines, vercel-react-best-practices, accessibility-first, dark-mode-mastery,
+  component-architecture. Available in all projects, not just this one.
+- **Next step for quoting tool**: run migration 0007 in Supabase SQL Editor (if not yet done),
+  then begin Phase 8 (Vacuum tab) using the quotation-app repo as the data/logic source.
 
 ---
 
@@ -679,10 +713,6 @@ selection list can be navigated independently of the page scroll.
   Never update just one without the other.
 
 ### Still to build (no data blocker — code work):
-- **Phase 9 — Quote save/load/revisions** — the single biggest missing feature. The Save Quote
-  button is disabled. No quote persists across page refreshes. No quote dashboard (list of saved
-  quotes). No revision history (B1 → B2 → B3). This must be built before the tool is usable
-  in the field.
 - **Phase 10 — Items tab** — manual line items, quantities, discount field, internal notes.
 - **Phase 5 — Admin catalog panel** — CRUD interface + CSV import so AVW staff can edit the
   catalog without touching the DB directly. Role-gated to admin only.

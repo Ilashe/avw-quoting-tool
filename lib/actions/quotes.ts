@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { SelectionValue } from '@/store/selectionsStore'
+import type { LineItem } from '@/types/parts'
+import { computeQuoteTotal } from '@/lib/pricing'
 
 export interface QuoteSummary {
   id: string
@@ -17,6 +19,7 @@ export interface QuoteSummary {
 
 export interface QuoteRow extends QuoteSummary {
   selections: Record<string, SelectionValue>
+  line_items: LineItem[]
 }
 
 async function authedSupabase() {
@@ -71,6 +74,16 @@ export async function getQuoteSelections(
   return ((data as { selections: Record<string, SelectionValue> } | null)?.selections ?? {})
 }
 
+export async function getQuoteLineItems(quoteId: string): Promise<LineItem[]> {
+  const { supabase } = await authedSupabase()
+  const { data } = await supabase
+    .from('quotes')
+    .select('line_items')
+    .eq('id', quoteId)
+    .single()
+  return ((data as { line_items: LineItem[] } | null)?.line_items ?? [])
+}
+
 export async function getUserQuotes(): Promise<QuoteSummary[]> {
   const { supabase } = await authedSupabase()
   const { data } = await supabase
@@ -84,25 +97,35 @@ export async function getUserQuotes(): Promise<QuoteSummary[]> {
 
 export async function saveQuote(
   quoteId: string,
-  selections: Record<string, SelectionValue>
+  selections: Record<string, SelectionValue>,
+  lineItems: LineItem[] = []
 ): Promise<void> {
   const { supabase } = await authedSupabase()
   const customerName = String(selections['customer'] ?? '')
+  const totalValue = computeQuoteTotal(lineItems, selections['items_discount_percent'] as number | null)
   await supabase
     .from('quotes')
-    .update({ selections, customer_name: customerName })
+    .update({ selections, line_items: lineItems, customer_name: customerName, total_value: totalValue })
     .eq('id', quoteId)
 }
 
 export async function finishQuote(
   quoteId: string,
-  selections: Record<string, SelectionValue>
+  selections: Record<string, SelectionValue>,
+  lineItems: LineItem[] = []
 ): Promise<void> {
   const { supabase } = await authedSupabase()
   const customerName = String(selections['customer'] ?? '')
+  const totalValue = computeQuoteTotal(lineItems, selections['items_discount_percent'] as number | null)
   await supabase
     .from('quotes')
-    .update({ selections, customer_name: customerName, status: 'complete' })
+    .update({
+      selections,
+      line_items: lineItems,
+      customer_name: customerName,
+      total_value: totalValue,
+      status: 'complete',
+    })
     .eq('id', quoteId)
   revalidatePath('/quotes')
 }
@@ -141,6 +164,8 @@ export async function cloneQuote(quoteId: string): Promise<QuoteSummary> {
       user_id: userId,
       customer_name: clonedName,
       selections: original.selections,
+      line_items: original.line_items,
+      total_value: original.total_value,
       status: 'draft',
     })
     .select('id, customer_name, status, is_pinned, total_value, created_at, updated_at')

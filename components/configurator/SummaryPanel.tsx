@@ -74,13 +74,20 @@ export default function SummaryPanel() {
     if (suppressedTriggerFields.has(field_key)) continue
 
     // Robot Arch (and any future multi_part_picker field): show each picked part's own
-    // detail row instead of a generic "Yes".
+    // detail row instead of a generic "Yes". The same part can be selectable under more
+    // than one picker (e.g. also under Applicator Arches), so the Item column shows the
+    // trigger field's name (e.g. "Robot Arch") rather than the bare part number, to make
+    // clear which selection each row came from; the part number/description move into
+    // the Description column.
     if (widget === 'multi_part_picker') {
+      const rule = rules.find((r) => r.action_type === 'show' && r.target_field === field_key)
+      const triggerItem = rule ? items.find((i) => i.metadata.field_key === rule.trigger_field) : null
+      const groupLabel = triggerItem?.name ?? item.name
       for (const part of raw as SelectedPart[]) {
         itemRows.push({
           key: `${field_key}:${part.part_number}`,
-          item: part.part_number,
-          description: part.description,
+          item: groupLabel,
+          description: `${part.part_number} — ${part.description}`,
           price: part.unit_price,
         })
       }

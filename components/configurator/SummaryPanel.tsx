@@ -1,5 +1,6 @@
 'use client'
 
+import { Fragment } from 'react'
 import { useSelectionsStore } from '@/store/selectionsStore'
 import { useLineItemsStore } from '@/store/lineItemsStore'
 import { useEquipmentCatalog } from '@/lib/catalog/useEquipmentCatalog'
@@ -7,32 +8,62 @@ import { generalFields } from '@/lib/configurator/generalFields'
 import { isFieldVisible } from '@/lib/rules/engine'
 import { computeQuoteTotal } from '@/lib/pricing'
 import { formatCurrency } from '@/lib/format'
+import type { SelectedPart } from '@/types/parts'
 
-interface SummaryRow {
+interface HeaderRow {
   key: string
   label: string
   value: string
 }
 
+interface ItemRow {
+  key: string
+  item: string
+  description: string
+  price: number
+}
+
 export default function SummaryPanel() {
   const values = useSelectionsStore((s) => s.values)
   const lineItems = useLineItemsStore((s) => s.items)
-  const total = computeQuoteTotal(lineItems, values['items_discount_percent'] as number | null)
+  const discountPercent = values['items_discount_percent'] as number | null
+  const total = computeQuoteTotal(lineItems, values, discountPercent)
   // null = all tabs; single fetch covers equipment, backroom, fixtures_signs, etc.
   const { items, options, rules } = useEquipmentCatalog(null)
 
-  const rows: SummaryRow[] = []
+  // General tab fields (Customer, Ship to Address, drive type, voltages, liftgate) are
+  // quote-header attributes, not priced items — shown as a header block, not the item table.
+  const headerRows: HeaderRow[] = []
+  let customerName = ''
 
   for (const field of generalFields) {
     const raw = values[field.key]
     if (raw === null || raw === undefined || raw === '') continue
-    // text and address_autocomplete: show raw string; radio/select: look up label
     const displayValue =
       field.widget === 'text' || field.widget === 'address_autocomplete'
         ? String(raw)
-        : field.options?.find((o) => o.value === raw)?.label ?? String(raw)
-    rows.push({ key: field.key, label: field.label, value: displayValue })
+        : (field.options?.find((o) => o.value === raw)?.label ?? String(raw))
+    if (field.key === 'customer') {
+      customerName = displayValue
+      continue
+    }
+    headerRows.push({ key: field.key, label: field.label, value: displayValue })
   }
+
+  // Trigger fields (e.g. "Robot Arch" Yes/No) whose multi_part_picker detail field
+  // already has real selections — suppress the plain "Yes" row in favor of the parts.
+  const suppressedTriggerFields = new Set<string>()
+  for (const rule of rules) {
+    if (rule.action_type !== 'show') continue
+    const targetItem = items.find((i) => i.metadata.field_key === rule.target_field)
+    if (targetItem?.metadata.widget !== 'multi_part_picker') continue
+    const targetValue = values[rule.target_field]
+    if (Array.isArray(targetValue) && targetValue.length > 0) {
+      suppressedTriggerFields.add(rule.trigger_field)
+    }
+  }
+
+  const itemRows: ItemRow[] = []
 
   for (const item of items) {
     const { field_key, widget, unit } = item.metadata
@@ -40,64 +71,96 @@ export default function SummaryPanel() {
     if (raw === null || raw === undefined || raw === '') continue
     if (widget === 'pending') continue
     if (!isFieldVisible(rules, values, field_key)) continue
+    if (suppressedTriggerFields.has(field_key)) continue
 
-    let displayValue: string
+    // Robot Arch (and any future multi_part_picker field): show each picked part's own
+    // detail row instead of a generic "Yes".
+    if (widget === 'multi_part_picker') {
+      for (const part of raw as SelectedPart[]) {
+        itemRows.push({
+          key: `${field_key}:${part.part_number}`,
+          item: part.part_number,
+          description: part.description,
+          price: part.unit_price,
+        })
+      }
+      continue
+    }
+
+    let description: string
     if (widget === 'number' || widget === 'combobox_range') {
-      displayValue = raw === 'none' ? 'None' : `${raw}${unit ? ' ' + unit : ''}`
+      description = raw === 'none' ? 'None' : `${raw}${unit ? ' ' + unit : ''}`
     } else if (widget === 'select_range') {
-      displayValue = `${raw}${unit ? ' ' + unit : ''}`
+      description = `${raw}${unit ? ' ' + unit : ''}`
     } else {
-      displayValue =
+      description =
         options.find((o) => o.item_id === item.id && o.option_value === raw)?.option_label ?? String(raw)
     }
 
-    rows.push({ key: field_key, label: item.name, value: displayValue })
+    itemRows.push({ key: field_key, item: item.name, description, price: 0 })
   }
 
+  for (const line of lineItems) {
+    itemRows.push({
+      key: line.id,
+      item: line.part_number ?? 'Custom',
+      description: `${line.quantity}× ${line.description}`,
+      price: line.unit_price * line.quantity,
+    })
+  }
+
+  const hasContent = Boolean(customerName) || headerRows.length > 0 || itemRows.length > 0
+
   return (
-    <aside className="sticky top-0 flex h-screen w-96 shrink-0 self-start flex-col border-l border-slate-200 bg-ink text-white">
-      <div className="border-b border-white/10 px-4 py-3">
+    <aside className="sticky top-0 flex h-screen w-[34rem] shrink-0 self-start flex-col border-l border-slate-200 bg-ink text-white">
+      <div className="border-b border-white/10 px-5 py-3">
         <p className="text-[11px] uppercase tracking-wide text-slate-300">Quote Summary</p>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3">
-        {rows.length === 0 && lineItems.length === 0 ? (
+
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        {!hasContent ? (
           <p className="text-sm text-slate-400">
             No items selected yet. Choices you make across each tab will appear here.
           </p>
         ) : (
           <>
-            {rows.length > 0 && (
-              <ul className="space-y-2 text-sm">
-                {rows.map((row) => (
-                  <li key={row.key} className="flex justify-between gap-3">
-                    <span className="text-slate-300">{row.label}</span>
-                    <span className="text-right font-medium">{row.value}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {lineItems.length > 0 && (
-              <div className={rows.length > 0 ? 'mt-4 border-t border-white/10 pt-3' : ''}>
-                <p className="mb-2 text-[11px] uppercase tracking-wide text-slate-300">Line Items</p>
-                <ul className="space-y-2 text-sm">
-                  {lineItems.map((item) => (
-                    <li key={item.id} className="flex justify-between gap-3">
-                      <span className="text-slate-300">
-                        {item.quantity}× {item.description}
-                      </span>
-                      <span className="text-right font-medium">
-                        {formatCurrency(item.unit_price * item.quantity)}
-                      </span>
-                    </li>
+            {/* Header block: quote-level attributes, not priced items */}
+            <div className="mb-4 border-b border-white/10 pb-4">
+              <p className="font-display text-lg uppercase tracking-wide text-white">
+                {customerName || 'Untitled Quote'}
+              </p>
+              {headerRows.length > 0 && (
+                <div className="mt-2 space-y-1 text-xs">
+                  {headerRows.map((row) => (
+                    <div key={row.key} className="flex justify-between gap-3">
+                      <span className="text-slate-400">{row.label}</span>
+                      <span className="font-medium text-slate-200">{row.value}</span>
+                    </div>
                   ))}
-                </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Item table: Item | Description | Price */}
+            {itemRows.length > 0 && (
+              <div className="grid grid-cols-[1fr_1.4fr_auto] gap-x-3 gap-y-2 text-sm">
+                <span className="text-[11px] uppercase tracking-wide text-slate-400">Item</span>
+                <span className="text-[11px] uppercase tracking-wide text-slate-400">Description</span>
+                <span className="text-right text-[11px] uppercase tracking-wide text-slate-400">Price</span>
+                {itemRows.map((row) => (
+                  <Fragment key={row.key}>
+                    <span className="min-w-0 truncate font-medium text-slate-100">{row.item}</span>
+                    <span className="line-clamp-2 min-w-0 text-xs text-slate-300">{row.description}</span>
+                    <span className="text-right font-medium text-slate-100">{formatCurrency(row.price)}</span>
+                  </Fragment>
+                ))}
               </div>
             )}
           </>
         )}
       </div>
-      <div className="flex items-center justify-between border-t border-white/10 px-4 py-3">
+
+      <div className="flex items-center justify-between border-t border-white/10 px-5 py-3">
         <span className="text-sm font-semibold uppercase tracking-wide">Total</span>
         <span className="font-mono text-lg font-semibold">{formatCurrency(total)}</span>
       </div>

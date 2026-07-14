@@ -1,4 +1,12 @@
-export type FieldWidget = 'text' | 'radio' | 'select' | 'number' | 'select_range' | 'combobox_range' | 'pending'
+export type FieldWidget =
+  | 'text'
+  | 'radio'
+  | 'select'
+  | 'number'
+  | 'select_range'
+  | 'combobox_range'
+  | 'pending'
+  | 'multi_part_picker'
 
 export interface EquipmentItemMetadata {
   field_key: string

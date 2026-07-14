@@ -23,3 +23,12 @@ export interface LineItem {
   quantity: number
   image_url: string | null
 }
+
+// A part chosen via a multi_part_picker field (e.g. Robot Arch). Stored denormalized
+// (like LineItem) inside selectionsStore so totals/summary don't need a DB round-trip.
+export interface SelectedPart {
+  part_number: string
+  description: string
+  unit_price: number
+  image_url: string | null
+}

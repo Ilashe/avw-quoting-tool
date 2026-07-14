@@ -6,7 +6,9 @@ import RadioGroup from './fields/RadioGroup'
 import SelectField from './fields/SelectField'
 import NumberField from './fields/NumberField'
 import ComboNumberField from './fields/ComboNumberField'
+import MultiPartPicker from './fields/MultiPartPicker'
 import type { EquipmentItem, EquipmentOption } from '@/types/equipment'
+import type { SelectedPart } from '@/types/parts'
 
 export const EMPTY_OPTIONS: EquipmentOption[] = []
 
@@ -46,6 +48,17 @@ const CatalogField = memo(function CatalogField({
         <span className="block text-sm font-medium text-ink">{item.name}</span>
         <p className="mt-1 text-xs italic text-slate-400">Waiting for Scott</p>
       </div>
+    )
+  }
+
+  if (widget === 'multi_part_picker') {
+    return (
+      <MultiPartPicker
+        label={item.name}
+        options={options}
+        value={value as SelectedPart[] | null}
+        onChange={(parts) => setField(field_key, parts)}
+      />
     )
   }
 

@@ -36,6 +36,7 @@ export default function EquipmentTab() {
           if (!isFieldVisible(rules, values, fk)) return true
           if (item.metadata.widget === 'pending') return true
           const v = values[fk]
+          if (Array.isArray(v)) return v.length > 0
           return v !== null && v !== undefined && v !== ''
         })
 

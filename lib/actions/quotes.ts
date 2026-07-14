@@ -102,7 +102,7 @@ export async function saveQuote(
 ): Promise<void> {
   const { supabase } = await authedSupabase()
   const customerName = String(selections['customer'] ?? '')
-  const totalValue = computeQuoteTotal(lineItems, selections['items_discount_percent'] as number | null)
+  const totalValue = computeQuoteTotal(lineItems, selections, selections['items_discount_percent'] as number | null)
   await supabase
     .from('quotes')
     .update({ selections, line_items: lineItems, customer_name: customerName, total_value: totalValue })
@@ -116,7 +116,7 @@ export async function finishQuote(
 ): Promise<void> {
   const { supabase } = await authedSupabase()
   const customerName = String(selections['customer'] ?? '')
-  const totalValue = computeQuoteTotal(lineItems, selections['items_discount_percent'] as number | null)
+  const totalValue = computeQuoteTotal(lineItems, selections, selections['items_discount_percent'] as number | null)
   await supabase
     .from('quotes')
     .update({

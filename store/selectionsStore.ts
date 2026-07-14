@@ -1,6 +1,7 @@
 import { create } from 'zustand'
+import type { SelectedPart } from '@/types/parts'
 
-export type SelectionValue = string | number | null
+export type SelectionValue = string | number | null | SelectedPart[]
 
 interface SelectionsState {
   values: Record<string, SelectionValue>

@@ -13,10 +13,11 @@ export default function TopBar({
   saving: boolean
   onNewQuote: () => void
 }) {
-  const customerName = useSelectionsStore((s) => s.values['customer'] as string | null | undefined)
-  const discountPercent = useSelectionsStore((s) => s.values['items_discount_percent'] as number | null)
+  const values = useSelectionsStore((s) => s.values)
+  const customerName = values['customer'] as string | null | undefined
+  const discountPercent = values['items_discount_percent'] as number | null
   const lineItems = useLineItemsStore((s) => s.items)
-  const total = computeQuoteTotal(lineItems, discountPercent)
+  const total = computeQuoteTotal(lineItems, values, discountPercent)
 
   return (
     <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">

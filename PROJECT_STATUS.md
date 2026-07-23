@@ -642,9 +642,9 @@ those mistakes before re-inserting correctly.
 No code changes to the quoting tool this session. Work covered:
 - **JobBOSS² integration research** — confirmed feasible as Phase 13. Hook point: `finishQuote`
   server action → `lib/actions/jobBoss.ts` → REST API. Post-build addition.
-- **quotation-app repo review** (`C:/Users/HomePC/Documents/Workflows/Nexucentri/quotation-app`)
-  — identified as the Phase 8 (Vacuum tab) foundation. Contains Eurovac III pricing data (15 central
-  unit models, VFD controls by HP/voltage, workstations by bay count) and calculation logic.
+- **Standalone vacuum-calculator source reviewed** — identified as the Phase 8 (Vacuum tab)
+  foundation. Contains Eurovac III pricing data (15 central unit models, VFD controls by
+  HP/voltage, workstations by bay count) and calculation logic.
   Recommendation: extract price data into `supabase/migrations/0008_vacuum.sql`, build VacuumTab
   using the existing CatalogField renderer, port calculation logic as a utility function.
 - **Claude Code user-scope skills installed** at `~/.claude/commands/`:
@@ -652,7 +652,8 @@ No code changes to the quoting tool this session. Work covered:
   vercel-web-design-guidelines, vercel-react-best-practices, accessibility-first, dark-mode-mastery,
   component-architecture. Available in all projects, not just this one.
 - **Next step for quoting tool**: run migration 0007 in Supabase SQL Editor (if not yet done),
-  then begin Phase 8 (Vacuum tab) using the quotation-app repo as the data/logic source.
+  then begin Phase 8 (Vacuum tab) using the standalone vacuum-calculator source as the data/logic
+  source.
 
 ---
 

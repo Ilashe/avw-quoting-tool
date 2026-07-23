@@ -7,17 +7,16 @@
 -- SKU 'EQ-FRIN-001A' sorts directly after 'EQ-FRIN-001' so the picker renders right under
 -- the Yes/No radio (fields in a section render sorted by SKU, see EquipmentTab.tsx).
 --
--- 40 parts total: the original 27 curated Applicator-specific candidates (filtered from a
--- "%applicator%" description search, excluding accessories like Top Bars/Legs/Manifolds and
--- unrelated "applicator" items like Tire Dressing/Bug Gun/Wheel Brite/Grill applicators), plus
--- all 26 parts from the Robot Arch picker (0012) per client request — by client decision, the
--- same part can be selectable under both pickers. Client explicitly excluded AA2-12 and
--- OT2-AA0-Z (present in neither picker) since they have no image, price, or description
--- anywhere in the source data — nothing to show.
+-- By final client decision, this picker's part list is IDENTICAL to Robot Arch's (0012) —
+-- the same 26 parts, in the same order. An earlier version of this migration curated a
+-- separate 27-part "Applicator"-specific list (from a description search) and then merged in
+-- Robot Arch's parts, but the client asked to drop the separate curation entirely and just
+-- mirror Robot Arch exactly. AA2-12 and OT2-AA0-Z are excluded from both pickers — no image,
+-- price, or description exists for them anywhere in the source data.
 --
 -- The Quote Summary shows the trigger field's name ("Robot Arch" vs "Applicator Arches") as
--- the Item label so overlapping parts read as distinct selections, not duplicates (see
--- SummaryPanel.tsx).
+-- the Item label so the same part selected under both pickers reads as two distinct
+-- selections, not a duplicate (see SummaryPanel.tsx).
 --
 -- Re-runnable: cleanup block removes this exact SKU/rule before re-inserting. Does NOT touch
 -- EQ-FRIN-001's own options/metadata cleanup beyond what's needed to reset it to radio Yes/No.
@@ -43,20 +42,17 @@ select 'EQ-FRIN-001A', 'Applicator Arches Selection', cat.category_id, 0,
   '{"field_key": "applicator_arches_parts", "widget": "multi_part_picker"}'::jsonb
 from cat;
 
+-- Identical list/order to Robot Arch (0012)
 insert into equipment_options (item_id, option_key, option_label, option_value, sort_order)
 select id, 'applicator_arches_parts', v.part_number, v.part_number, v.ord
 from equipment_items, (values
-  -- original 27 Applicator-specific candidates
-  ('AA1', 1), ('AA1-12', 2), ('AA1-14', 3), ('AA1-5269', 4), ('AA1-HP1', 5),
-  ('AA1-LPC', 6), ('AA1-SPRT', 7), ('AA1-Z', 8), ('AA2', 9), ('AA2-HP1', 10),
-  ('AA2-LPC', 11), ('AA3', 12), ('AA4', 13), ('AVW-R-AA1-1798', 14), ('AVW-R-AA2', 15),
-  ('BEN-OT2-AA1', 16), ('BEN-OT2-AA2', 17), ('R-AA1', 18), ('R-AA1-2324', 19),
-  ('OT2-AA1', 20), ('OT2-AA1-HP1', 21), ('OT2-AA1X3', 22), ('OT2-AA2', 23),
-  ('OT2-AA2X3', 24), ('OT2-AA2X3-0622', 25), ('OT2-ENTRARCH', 26), ('OT2-AA3X3-0622', 27),
-  -- remaining 13 parts from the Robot Arch picker (0012), added per client request
-  ('AA1X3', 28), ('FM1A-C-Z', 29), ('OT2-AA0-14', 30), ('OT2-AA0-0622', 31),
-  ('AA0', 32), ('AA012', 33), ('AA014', 34), ('AA0-Z', 35), ('AA0-Z-12113', 36),
-  ('AA0-3X3-5269', 37), ('FM1A-C', 38), ('OT2-AA0', 39), ('AVW-BWA1', 40)
+  ('AA0', 1), ('AA012', 2), ('AA014', 3), ('AA0-Z', 4), ('AA0-Z-12113', 5),
+  ('AA1', 6), ('AA1-14', 7), ('AA1-LPC', 8), ('AA2-LPC', 9), ('AA0-3X3-5269', 10),
+  ('FM1A-C', 11), ('OT2-AA0', 12), ('OT2-AA2', 13), ('OT2-ENTRARCH', 14),
+  ('OT2-AA1', 15), ('OT2-AA1X3', 16), ('OT2-AA2X3', 17), ('OT2-AA2X3-0622', 18),
+  ('AVW-BWA1', 19),
+  ('AA1-12', 20), ('AA1X3', 21), ('AA2', 22), ('FM1A-C-Z', 23),
+  ('OT2-AA0-14', 24), ('OT2-AA0-0622', 25), ('OT2-AA3X3-0622', 26)
 ) as v(part_number, ord)
 where sku = 'EQ-FRIN-001A';
 

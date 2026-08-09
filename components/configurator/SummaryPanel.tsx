@@ -52,17 +52,17 @@ export default function SummaryPanel() {
     headerRows.push({ key: field.key, label: field.label, value: displayValue })
   }
 
-  // Trigger fields (e.g. "Robot Arch" Yes/No) whose multi_part_picker detail field
-  // already has real selections — suppress the plain "Yes" row in favor of the parts.
+  // Trigger fields (e.g. "Sidewashers" Yes/No) that gate a multi_part_picker are never shown
+  // as their own row — Yes/No is just a gate, not a priced selection. Whether the answer is
+  // Yes or No, and whether the picker has any selections yet, the summary stays silent for
+  // this field; only the actual picked parts ever appear (added below when the picker field
+  // itself is processed).
   const suppressedTriggerFields = new Set<string>()
   for (const rule of rules) {
     if (rule.action_type !== 'show') continue
     const targetItem = items.find((i) => i.metadata.field_key === rule.target_field)
     if (targetItem?.metadata.widget !== 'multi_part_picker') continue
-    const targetValue = values[rule.target_field]
-    if (Array.isArray(targetValue) && targetValue.length > 0) {
-      suppressedTriggerFields.add(rule.trigger_field)
-    }
+    suppressedTriggerFields.add(rule.trigger_field)
   }
 
   const itemRows: ItemRow[] = []

@@ -17,7 +17,7 @@ export default function RadioGroup({
   name: string
   options: RadioOption[]
   value: string | null
-  onChange: (value: string) => void
+  onChange: (value: string | null) => void
   required?: boolean
 }) {
   return (
@@ -43,7 +43,13 @@ export default function RadioGroup({
                 name={name}
                 value={option.value}
                 checked={checked}
-                onChange={() => onChange(option.value)}
+                // Native radios don't fire onChange when clicking an already-checked option
+                // (no state change from the browser's point of view), so the actual
+                // select/deselect logic lives in onClick instead — clicking the currently
+                // selected option clears the field back to null rather than staying stuck on
+                // it, same as any other option toggling it on.
+                onChange={() => {}}
+                onClick={() => onChange(checked ? null : option.value)}
                 onMouseDown={(e) => e.preventDefault()}
                 className="absolute inset-0 cursor-pointer opacity-0"
               />

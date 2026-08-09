@@ -20,6 +20,8 @@ interface ItemRow {
   key: string
   item: string
   description: string
+  quantity: number | null
+  unitPrice: number | null
   price: number
 }
 
@@ -83,14 +85,21 @@ export default function SummaryPanel() {
       const rule = rules.find((r) => r.action_type === 'show' && r.target_field === field_key)
       const triggerItem = rule ? items.find((i) => i.metadata.field_key === rule.trigger_field) : null
       const groupLabel = triggerItem?.name ?? item.name
-      for (const part of raw as SelectedPart[]) {
+      // Index in the key (not just part_number) because two different trigger parts in the
+      // same picker can bundle the same required part (e.g. CB0405 and CB0405-EL both pull in
+      // CB0405AMC-23-13 as a core item) — those are legitimately separate rows, one set of
+      // cores per unit, not a single merged quantity.
+      ;(raw as SelectedPart[]).forEach((part, i) => {
+        const quantity = part.quantity ?? 1
         itemRows.push({
-          key: `${field_key}:${part.part_number}`,
-          item: groupLabel,
+          key: `${field_key}:${i}:${part.part_number}`,
+          item: part.choice_label ? `${groupLabel} — ${part.choice_label}` : groupLabel,
           description: `${part.part_number} — ${part.description}`,
-          price: part.unit_price,
+          quantity,
+          unitPrice: part.unit_price,
+          price: part.unit_price * quantity,
         })
-      }
+      })
       continue
     }
 
@@ -104,14 +113,16 @@ export default function SummaryPanel() {
         options.find((o) => o.item_id === item.id && o.option_value === raw)?.option_label ?? String(raw)
     }
 
-    itemRows.push({ key: field_key, item: item.name, description, price: 0 })
+    itemRows.push({ key: field_key, item: item.name, description, quantity: null, unitPrice: null, price: 0 })
   }
 
   for (const line of lineItems) {
     itemRows.push({
       key: line.id,
       item: line.part_number ?? 'Custom',
-      description: `${line.quantity}× ${line.description}`,
+      description: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unit_price,
       price: line.unit_price * line.quantity,
     })
   }
@@ -148,16 +159,22 @@ export default function SummaryPanel() {
               )}
             </div>
 
-            {/* Item table: Item | Description | Price */}
+            {/* Item table: Item | Description | Qty | Unit Price | Price */}
             {itemRows.length > 0 && (
-              <div className="grid grid-cols-[1fr_1.4fr_auto] gap-x-3 gap-y-2 text-sm">
+              <div className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-x-3 gap-y-2 text-sm">
                 <span className="text-[11px] uppercase tracking-wide text-slate-400">Item</span>
                 <span className="text-[11px] uppercase tracking-wide text-slate-400">Description</span>
+                <span className="text-right text-[11px] uppercase tracking-wide text-slate-400">Qty</span>
+                <span className="text-right text-[11px] uppercase tracking-wide text-slate-400">Unit Price</span>
                 <span className="text-right text-[11px] uppercase tracking-wide text-slate-400">Price</span>
                 {itemRows.map((row) => (
                   <Fragment key={row.key}>
                     <span className="min-w-0 truncate font-medium text-slate-100">{row.item}</span>
                     <span className="line-clamp-2 min-w-0 text-xs text-slate-300">{row.description}</span>
+                    <span className="text-right text-xs text-slate-300">{row.quantity ?? ''}</span>
+                    <span className="text-right text-xs text-slate-300">
+                      {row.unitPrice !== null ? formatCurrency(row.unitPrice) : ''}
+                    </span>
                     <span className="text-right font-medium text-slate-100">{formatCurrency(row.price)}</span>
                   </Fragment>
                 ))}

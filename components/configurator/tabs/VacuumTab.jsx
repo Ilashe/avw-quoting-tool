@@ -1,6 +1,5 @@
 "use client";
 import React, { useState } from 'react';
-import Image from 'next/image';
 import { Calculator, Download, Trash2, Plus, X, Info } from 'lucide-react';
 
 // Complete price data
@@ -744,27 +743,6 @@ const VacuumQuoteCalculator = () => {
       `}</style>
 
       <div className="max-w-6xl mx-auto">
-        {/* Header Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 flex-shrink-0 relative bg-slate-100 rounded-xl p-2">
-                <Image
-                  src="/avw_logo.png"
-                  alt="Company Logo"
-                  fill
-                  className="object-contain p-1"
-                  priority
-                />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Vacuum System Calculator</h1>
-                <p className="text-sm text-slate-500 mt-0.5">Professional quote generation tool</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Configuration Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
           <h2 className="text-lg font-semibold text-slate-900 mb-5 flex items-center gap-2">

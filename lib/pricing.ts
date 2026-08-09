@@ -10,7 +10,7 @@ export function selectionsPartsTotal(selections: Record<string, SelectionValue>)
   let total = 0
   for (const value of Object.values(selections)) {
     if (isSelectedPartArray(value)) {
-      total += value.reduce((sum, part) => sum + part.unit_price, 0)
+      total += value.reduce((sum, part) => sum + part.unit_price * (part.quantity ?? 1), 0)
     }
   }
   return total

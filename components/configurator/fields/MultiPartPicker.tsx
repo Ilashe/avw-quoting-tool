@@ -10,6 +10,16 @@ import { formatCurrency } from '@/lib/format'
 import type { EquipmentOption } from '@/types/equipment'
 import type { PartBundleRule, SelectedPart } from '@/types/parts'
 
+// choice_subgroup doubles as "Category:Material" when a trigger needs a third prompt stage
+// ahead of material (e.g. "Wrap" vs "Mitter curtain", each with its own different materials).
+// Plain subgroups (the vast majority — no colon) parse as material-only, family null.
+function parseSubgroup(subgroup: string | null): { family: string | null; material: string | null } {
+  if (!subgroup) return { family: null, material: null }
+  const idx = subgroup.indexOf(':')
+  if (idx === -1) return { family: null, material: subgroup }
+  return { family: subgroup.slice(0, idx), material: subgroup.slice(idx + 1) }
+}
+
 export default function MultiPartPicker({
   label,
   options,
@@ -59,6 +69,18 @@ export default function MultiPartPicker({
     subgroups: string[]
   } | null>(null)
 
+  // A few triggers need a THIRD stage ahead of material: pick a category first (e.g. "Wrap" vs
+  // "Mitter curtain"), where each category has its own different set of materials. Encoded as a
+  // "Category:Material" compound value in choice_subgroup (see parseSubgroup) rather than a new
+  // DB column — every existing two-stage rule has a plain (non-colon) subgroup, so this is a
+  // pure addition with no effect on anything already built.
+  const [pendingFamily, setPendingFamily] = useState<{
+    part: SelectedPart
+    coreRules: PartBundleRule[]
+    choiceRules: PartBundleRule[]
+    families: string[]
+  } | null>(null)
+
   function buildBundledPart(rule: PartBundleRule, triggerPartNumber: string): SelectedPart {
     const p = partsByNumber.get(rule.required_part_number)
     return {
@@ -89,9 +111,28 @@ export default function MultiPartPicker({
       return
     }
 
-    // A trigger whose choice rules span more than one choice_subgroup (e.g. "Foam" vs
-    // "Drycloth") needs the subgroup resolved first, before the actual colour prompt.
-    const subgroups = [...new Set(choiceRules.map((r) => r.choice_subgroup).filter((s): s is string => !!s))]
+    // A trigger whose choice rules span more than one category (e.g. "Wrap" vs "Mitter
+    // curtain", each with its own materials) needs the category resolved first.
+    const families = [
+      ...new Set(choiceRules.map((r) => parseSubgroup(r.choice_subgroup).family).filter((f): f is string => !!f)),
+    ]
+    if (families.length > 1) {
+      setPendingFamily({ part, coreRules, choiceRules, families })
+      return
+    }
+
+    // A trigger whose choice rules span more than one material (e.g. "Foam" vs "Drycloth")
+    // needs the material resolved first, before the actual colour prompt.
+    const subgroups = [
+      ...new Set(
+        choiceRules
+          .map((r) => {
+            const parsed = parseSubgroup(r.choice_subgroup)
+            return parsed.family ? parsed.material : r.choice_subgroup
+          })
+          .filter((s): s is string => !!s)
+      ),
+    ]
     if (subgroups.length > 1) {
       setPendingMaterial({ part, coreRules, choiceRules, subgroups })
       return
@@ -107,9 +148,27 @@ export default function MultiPartPicker({
     })
   }
 
+  function chooseFamily(family: string) {
+    if (!pendingFamily) return
+    const filtered = pendingFamily.choiceRules.filter((r) => parseSubgroup(r.choice_subgroup).family === family)
+    const materials = [
+      ...new Set(filtered.map((r) => parseSubgroup(r.choice_subgroup).material).filter((m): m is string => !!m)),
+    ]
+    if (materials.length > 1) {
+      setPendingMaterial({ part: pendingFamily.part, coreRules: pendingFamily.coreRules, choiceRules: filtered, subgroups: materials })
+    } else {
+      const choiceGroups = [...new Set(filtered.map((r) => r.choice_group as string))]
+      setPendingChoice({ part: pendingFamily.part, coreRules: pendingFamily.coreRules, choiceGroup: choiceGroups[0], choiceOptions: filtered })
+    }
+    setPendingFamily(null)
+  }
+
   function chooseMaterial(subgroup: string) {
     if (!pendingMaterial) return
-    const filtered = pendingMaterial.choiceRules.filter((r) => r.choice_subgroup === subgroup)
+    const filtered = pendingMaterial.choiceRules.filter((r) => {
+      const parsed = parseSubgroup(r.choice_subgroup)
+      return (parsed.family ? parsed.material : r.choice_subgroup) === subgroup
+    })
     const choiceGroups = [...new Set(filtered.map((r) => r.choice_group as string))]
     setPendingChoice({
       part: pendingMaterial.part,
@@ -120,9 +179,13 @@ export default function MultiPartPicker({
     setPendingMaterial(null)
   }
 
-  function confirmChoice(chosenRule: PartBundleRule) {
+  function confirmChoice(chosenLabel: string) {
     if (!pendingChoice) return
-    const additions = [...pendingChoice.coreRules, chosenRule].map((r) =>
+    // A single colour choice can resolve to more than one required part (e.g. CB0405's
+    // "Black" adds both the lower-contour AND upper-contour brush) — every rule row sharing
+    // this choice_group + choice_label gets added together, not just one.
+    const chosenRules = pendingChoice.choiceOptions.filter((r) => r.choice_label === chosenLabel)
+    const additions = [...pendingChoice.coreRules, ...chosenRules].map((r) =>
       buildBundledPart(r, pendingChoice.part.part_number)
     )
     onChange([...selected, pendingChoice.part, ...additions])
@@ -256,6 +319,15 @@ export default function MultiPartPicker({
         </>
       )}
 
+      {pendingFamily && (
+        <MaterialChoiceModal
+          heading="Choose a category"
+          options={pendingFamily.families}
+          onChoose={chooseFamily}
+          onCancel={() => setPendingFamily(null)}
+        />
+      )}
+
       {pendingMaterial && (
         <MaterialChoiceModal
           options={pendingMaterial.subgroups}
@@ -294,10 +366,12 @@ function choiceHoverClasses(label: string | null): string {
 // First stage of a two-stage bundle choice (e.g. "Foam" vs "Drycloth") — resolves into a
 // second BundleChoiceModal scoped to whichever subgroup was picked (see chooseMaterial).
 function MaterialChoiceModal({
+  heading = 'Choose a material',
   options,
   onChoose,
   onCancel,
 }: {
+  heading?: string
   options: string[]
   onChoose: (subgroup: string) => void
   onCancel: () => void
@@ -305,7 +379,7 @@ function MaterialChoiceModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-xs rounded-xl bg-white p-5 shadow-xl">
-        <p className="text-sm font-semibold text-ink">Choose a material</p>
+        <p className="text-sm font-semibold text-ink">{heading}</p>
         <div className="mt-3 flex gap-2">
           {options.map((subgroup) => (
             <button
@@ -338,9 +412,14 @@ function BundleChoiceModal({
 }: {
   choiceGroup: string
   options: PartBundleRule[]
-  onChoose: (rule: PartBundleRule) => void
+  onChoose: (label: string) => void
   onCancel: () => void
 }) {
+  // Multiple rule rows can share the same choice_label (e.g. CB0405's "Black" covers both the
+  // lower-contour and upper-contour brush parts) — render one button per unique label, in
+  // sort_order, and let confirmChoice resolve every matching row when it's picked.
+  const uniqueLabels = [...new Set(options.map((r) => r.choice_label as string))]
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-xs rounded-xl bg-white p-5 shadow-xl">
@@ -349,14 +428,14 @@ function BundleChoiceModal({
             phrase its own prompt without a code change. */}
         <p className="text-sm font-semibold text-ink">{choiceGroup}</p>
         <div className="mt-3 flex gap-2">
-          {options.map((rule) => (
+          {uniqueLabels.map((label) => (
             <button
-              key={rule.id}
+              key={label}
               type="button"
-              onClick={() => onChoose(rule)}
-              className={`flex-1 rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-medium text-ink transition ${choiceHoverClasses(rule.choice_label)}`}
+              onClick={() => onChoose(label)}
+              className={`flex-1 rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-medium text-ink transition ${choiceHoverClasses(label)}`}
             >
-              {rule.choice_label}
+              {label}
             </button>
           ))}
         </div>

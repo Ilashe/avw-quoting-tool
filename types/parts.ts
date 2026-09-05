@@ -58,4 +58,14 @@ export interface PartBundleRule {
   required_part_number: string
   quantity: number
   sort_order: number
+  // When 2+ distinct non-null values exist among a trigger's choice rows, the picker resolves
+  // them as an ADDITIVE queue (ask about each component in turn, sum every component's result)
+  // instead of the ordinary single merged choice — e.g. Contour's independent Lower/Upper zones,
+  // or a combo's separate Wrap/Mitter/Contour questions. Null for every single-component trigger
+  // (the vast majority) — no behavior change for those.
+  component: string | null
+  // Set true only on Mitter's (and Mini Mitter's) color-choice rows: offers a "one colour or
+  // two?" fork that splits the row's quantity roughly in half across two colours instead of
+  // picking exactly one. Defaults false everywhere else.
+  allow_two_color_split: boolean
 }

@@ -31,7 +31,7 @@ export function usePartBundleRules(triggerPartNumbers: string[]) {
 
       const { data, error } = await supabase
         .from('part_bundle_rules')
-        .select('id, trigger_part_number, choice_group, choice_subgroup, choice_label, required_part_number, quantity, sort_order')
+        .select('id, trigger_part_number, choice_group, choice_subgroup, choice_label, required_part_number, quantity, sort_order, component, allow_two_color_split')
         .in('trigger_part_number', triggerPartNumbers)
         .order('sort_order', { ascending: true })
 

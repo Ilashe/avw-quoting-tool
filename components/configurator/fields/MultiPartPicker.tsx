@@ -13,12 +13,17 @@ import type { PartBundleRule, SelectedPart } from '@/types/parts'
 // choice_subgroup doubles as "Category:Material" when a trigger needs a third prompt stage
 // ahead of material (e.g. "Wrap" vs "Mitter curtain", each with its own different materials).
 // Plain subgroups (the vast majority — no colon) parse as material-only, family null.
+//
+// This is a genuinely EXCLUSIVE pick (choose ONE category, e.g. Rocker's Height) — distinct
+// from the additive `component` queue below, which asks about EVERY component, never a choice.
 function parseSubgroup(subgroup: string | null): { family: string | null; material: string | null } {
   if (!subgroup) return { family: null, material: null }
   const idx = subgroup.indexOf(':')
   if (idx === -1) return { family: null, material: subgroup }
   return { family: subgroup.slice(0, idx), material: subgroup.slice(idx + 1) }
 }
+
+type ComponentStage = { component: string; choiceRules: PartBundleRule[] }
 
 export default function MultiPartPicker({
   label,
@@ -52,19 +57,27 @@ export default function MultiPartPicker({
   const [hovered, setHovered] = useState<{ partNumber: string; top: number; left: number } | null>(null)
 
   const [pendingChoice, setPendingChoice] = useState<{
-    part: SelectedPart
+    // Present only for a standalone (non-queue) trigger's finalize — omitted while resolving a
+    // component-queue stage, where pendingComponentQueue itself owns the trigger part/cores.
+    part?: SelectedPart
     coreRules: PartBundleRule[]
+    // Non-null only inside a component-queue stage — drives the "<component> colour" heading
+    // and prefixes the resulting SelectedPart's choice_label (e.g. "Wrap — Black") so two
+    // components' rows are distinguishable in the Quote Summary. Null for every ordinary
+    // single-component trigger, which keeps today's plain choiceGroup-text heading.
+    component: string | null
     choiceGroup: string
     choiceOptions: PartBundleRule[]
   } | null>(null)
 
   // Some triggers need a two-stage prompt: pick a material/subgroup first (e.g. "Foam" vs
-  // "Drycloth"), then pick a colour within that subgroup. Populated when a trigger's choice
-  // rules span more than one distinct choice_subgroup; resolves into pendingChoice once a
-  // subgroup is picked (see chooseMaterial).
+  // "Drycloth"), then pick a colour within that subgroup. Populated when a trigger's (or a
+  // component stage's) choice rules span more than one distinct choice_subgroup; resolves into
+  // pendingChoice once a subgroup is picked (see chooseMaterial).
   const [pendingMaterial, setPendingMaterial] = useState<{
-    part: SelectedPart
+    part?: SelectedPart
     coreRules: PartBundleRule[]
+    component: string | null
     choiceRules: PartBundleRule[]
     subgroups: string[]
   } | null>(null)
@@ -72,8 +85,8 @@ export default function MultiPartPicker({
   // A few triggers need a THIRD stage ahead of material: pick a category first (e.g. "Wrap" vs
   // "Mitter curtain"), where each category has its own different set of materials. Encoded as a
   // "Category:Material" compound value in choice_subgroup (see parseSubgroup) rather than a new
-  // DB column — every existing two-stage rule has a plain (non-colon) subgroup, so this is a
-  // pure addition with no effect on anything already built.
+  // DB column. This is an EXCLUSIVE pick (e.g. Rocker's Height) — never combined with the
+  // additive component queue below (no live trigger uses both mechanisms at once).
   const [pendingFamily, setPendingFamily] = useState<{
     part: SelectedPart
     coreRules: PartBundleRule[]
@@ -81,8 +94,47 @@ export default function MultiPartPicker({
     families: string[]
   } | null>(null)
 
-  function buildBundledPart(rule: PartBundleRule, triggerPartNumber: string): SelectedPart {
+  // Additive queue: when a trigger's choice rules span 2+ distinct `component` values (e.g. a
+  // combo's separate Wrap and Mitter questions), EVERY component must be resolved in turn —
+  // never an exclusive pick, unlike pendingFamily above. `resolved` accumulates each finished
+  // component's parts; `coreRules` (the trigger's own always-added cores) are added exactly
+  // once, when the last component finishes (see advanceQueue).
+  const [pendingComponentQueue, setPendingComponentQueue] = useState<{
+    part: SelectedPart
+    coreRules: PartBundleRule[]
+    queue: ComponentStage[]
+    resolved: SelectedPart[]
+  } | null>(null)
+
+  type ColorChoiceArgs = {
+    part?: SelectedPart
+    coreRules: PartBundleRule[]
+    component: string | null
+    choiceGroup: string
+    choiceOptions: PartBundleRule[]
+  }
+
+  // Mitter's (and Mini Mitter's) colour rows carry allow_two_color_split — asked "one colour or
+  // two?" before the ordinary single-select colour modal. Every other trigger's colour rows
+  // have this false, so pendingColorCount/pendingTwoColorPick are simply never used for them.
+  const [pendingColorCount, setPendingColorCount] = useState<ColorChoiceArgs | null>(null)
+  const [pendingTwoColorPick, setPendingTwoColorPick] = useState<ColorChoiceArgs | null>(null)
+
+  function openColorChoice(args: ColorChoiceArgs) {
+    if (args.choiceOptions[0]?.allow_two_color_split) {
+      setPendingColorCount(args)
+    } else {
+      setPendingChoice(args)
+    }
+  }
+
+  function buildBundledPart(rule: PartBundleRule, triggerPartNumber: string, labelPrefix?: string): SelectedPart {
     const p = partsByNumber.get(rule.required_part_number)
+    const choiceLabel = rule.choice_label
+      ? labelPrefix
+        ? `${labelPrefix} — ${rule.choice_label}`
+        : rule.choice_label
+      : null
     return {
       part_number: rule.required_part_number,
       description: p?.description ?? rule.required_part_number,
@@ -90,8 +142,57 @@ export default function MultiPartPicker({
       image_url: p?.image_url ?? null,
       quantity: rule.quantity,
       bundled_with: triggerPartNumber,
-      choice_label: rule.choice_label,
+      choice_label: choiceLabel,
     }
+  }
+
+  // Opens the material or colour prompt for one component-queue stage. Never opens the
+  // exclusive "choose a category" modal — every stage in the queue always gets asked.
+  function openComponentStage(stage: ComponentStage) {
+    const subgroups = [
+      ...new Set(stage.choiceRules.map((r) => r.choice_subgroup).filter((s): s is string => !!s)),
+    ]
+    if (subgroups.length > 1) {
+      setPendingMaterial({ coreRules: [], component: stage.component, choiceRules: stage.choiceRules, subgroups })
+      return
+    }
+    const choiceGroups = [...new Set(stage.choiceRules.map((r) => r.choice_group as string))]
+    openColorChoice({
+      coreRules: [],
+      component: stage.component,
+      choiceGroup: choiceGroups[0],
+      choiceOptions: stage.choiceRules,
+    })
+  }
+
+  // Called once a component stage's colour is confirmed. Advances to the next queued
+  // component, or — once the queue is empty — adds the trigger part, its own core rules
+  // (added exactly once here, not per-stage), and every stage's accumulated parts together.
+  function advanceQueue(additionsFromThisStage: SelectedPart[]) {
+    if (!pendingComponentQueue) return
+    const resolved = [...pendingComponentQueue.resolved, ...additionsFromThisStage]
+    const [next, ...rest] = pendingComponentQueue.queue
+
+    if (!next) {
+      const coreParts = pendingComponentQueue.coreRules.map((r) =>
+        buildBundledPart(r, pendingComponentQueue.part.part_number)
+      )
+      onChange([...selected, pendingComponentQueue.part, ...coreParts, ...resolved])
+      setPendingComponentQueue(null)
+      return
+    }
+
+    setPendingComponentQueue({ ...pendingComponentQueue, queue: rest, resolved })
+    openComponentStage(next)
+  }
+
+  function cancelAll() {
+    setPendingFamily(null)
+    setPendingMaterial(null)
+    setPendingChoice(null)
+    setPendingColorCount(null)
+    setPendingTwoColorPick(null)
+    setPendingComponentQueue(null)
   }
 
   function toggle(part: SelectedPart) {
@@ -111,8 +212,26 @@ export default function MultiPartPicker({
       return
     }
 
+    // A trigger whose choice rules span more than one `component` (e.g. a combo's separate
+    // Wrap and Mitter questions) must resolve EVERY component in turn — an additive queue,
+    // never an exclusive pick.
+    const components = [
+      ...new Set(choiceRules.map((r) => r.component).filter((c): c is string => !!c)),
+    ]
+    if (components.length > 1) {
+      const queue: ComponentStage[] = components.map((component) => ({
+        component,
+        choiceRules: choiceRules.filter((r) => r.component === component),
+      }))
+      const [first, ...rest] = queue
+      setPendingComponentQueue({ part, coreRules, queue: rest, resolved: [] })
+      openComponentStage(first)
+      return
+    }
+
     // A trigger whose choice rules span more than one category (e.g. "Wrap" vs "Mitter
-    // curtain", each with its own materials) needs the category resolved first.
+    // curtain", each with its own materials) needs the category resolved first — an EXCLUSIVE
+    // pick (e.g. Rocker's Height), distinct from the additive component queue above.
     const families = [
       ...new Set(choiceRules.map((r) => parseSubgroup(r.choice_subgroup).family).filter((f): f is string => !!f)),
     ]
@@ -134,15 +253,16 @@ export default function MultiPartPicker({
       ),
     ]
     if (subgroups.length > 1) {
-      setPendingMaterial({ part, coreRules, choiceRules, subgroups })
+      setPendingMaterial({ part, coreRules, component: null, choiceRules, subgroups })
       return
     }
 
-    // Only one choice group supported per trigger part for now — prompt for the first.
+    // Only one choice group — prompt for it directly.
     const choiceGroups = [...new Set(choiceRules.map((r) => r.choice_group as string))]
-    setPendingChoice({
+    openColorChoice({
       part,
       coreRules,
+      component: null,
       choiceGroup: choiceGroups[0],
       choiceOptions: choiceRules.filter((r) => r.choice_group === choiceGroups[0]),
     })
@@ -155,10 +275,22 @@ export default function MultiPartPicker({
       ...new Set(filtered.map((r) => parseSubgroup(r.choice_subgroup).material).filter((m): m is string => !!m)),
     ]
     if (materials.length > 1) {
-      setPendingMaterial({ part: pendingFamily.part, coreRules: pendingFamily.coreRules, choiceRules: filtered, subgroups: materials })
+      setPendingMaterial({
+        part: pendingFamily.part,
+        coreRules: pendingFamily.coreRules,
+        component: null,
+        choiceRules: filtered,
+        subgroups: materials,
+      })
     } else {
       const choiceGroups = [...new Set(filtered.map((r) => r.choice_group as string))]
-      setPendingChoice({ part: pendingFamily.part, coreRules: pendingFamily.coreRules, choiceGroup: choiceGroups[0], choiceOptions: filtered })
+      openColorChoice({
+        part: pendingFamily.part,
+        coreRules: pendingFamily.coreRules,
+        component: null,
+        choiceGroup: choiceGroups[0],
+        choiceOptions: filtered,
+      })
     }
     setPendingFamily(null)
   }
@@ -170,9 +302,10 @@ export default function MultiPartPicker({
       return (parsed.family ? parsed.material : r.choice_subgroup) === subgroup
     })
     const choiceGroups = [...new Set(filtered.map((r) => r.choice_group as string))]
-    setPendingChoice({
+    openColorChoice({
       part: pendingMaterial.part,
       coreRules: pendingMaterial.coreRules,
+      component: pendingMaterial.component,
       choiceGroup: choiceGroups[0],
       choiceOptions: filtered,
     })
@@ -185,11 +318,53 @@ export default function MultiPartPicker({
     // "Black" adds both the lower-contour AND upper-contour brush) — every rule row sharing
     // this choice_group + choice_label gets added together, not just one.
     const chosenRules = pendingChoice.choiceOptions.filter((r) => r.choice_label === chosenLabel)
+    const triggerPartNumber = pendingChoice.part?.part_number ?? pendingComponentQueue?.part.part_number
+    if (!triggerPartNumber) return
     const additions = [...pendingChoice.coreRules, ...chosenRules].map((r) =>
-      buildBundledPart(r, pendingChoice.part.part_number)
+      buildBundledPart(r, triggerPartNumber, pendingChoice.component ?? undefined)
     )
-    onChange([...selected, pendingChoice.part, ...additions])
+
+    if (pendingComponentQueue) {
+      setPendingChoice(null)
+      advanceQueue(additions)
+      return
+    }
+
+    onChange([...selected, pendingChoice.part!, ...additions])
     setPendingChoice(null)
+  }
+
+  // Splits the row's stored quantity roughly in half across two picked colours — the
+  // first-picked colour gets the extra piece on an odd total (spec doesn't mandate a
+  // tie-break, so this is a documented, deterministic choice). Only reachable for rows with
+  // allow_two_color_split (Mitter/Mini Mitter) via pendingColorCount's "Two colours" branch.
+  function confirmTwoColorChoice(labels: [string, string]) {
+    if (!pendingTwoColorPick) return
+    const [firstLabel, secondLabel] = labels
+    const firstRules = pendingTwoColorPick.choiceOptions.filter((r) => r.choice_label === firstLabel)
+    const secondRules = pendingTwoColorPick.choiceOptions.filter((r) => r.choice_label === secondLabel)
+    const fullQty = firstRules[0]?.quantity ?? 0
+    const firstQty = Math.ceil(fullQty / 2)
+    const secondQty = Math.floor(fullQty / 2)
+
+    const triggerPartNumber = pendingTwoColorPick.part?.part_number ?? pendingComponentQueue?.part.part_number
+    if (!triggerPartNumber) return
+
+    const labelPrefix = pendingTwoColorPick.component ?? undefined
+    const additions = [
+      ...pendingTwoColorPick.coreRules.map((r) => buildBundledPart(r, triggerPartNumber, labelPrefix)),
+      ...firstRules.map((r) => buildBundledPart({ ...r, quantity: firstQty }, triggerPartNumber, labelPrefix)),
+      ...secondRules.map((r) => buildBundledPart({ ...r, quantity: secondQty }, triggerPartNumber, labelPrefix)),
+    ]
+
+    if (pendingComponentQueue) {
+      setPendingTwoColorPick(null)
+      advanceQueue(additions)
+      return
+    }
+
+    onChange([...selected, pendingTwoColorPick.part!, ...additions])
+    setPendingTwoColorPick(null)
   }
 
   // Card is a fixed 192px (w-48) wide, roughly 230px tall (image + text + padding). Positioned
@@ -324,24 +499,50 @@ export default function MultiPartPicker({
           heading="Choose a category"
           options={pendingFamily.families}
           onChoose={chooseFamily}
-          onCancel={() => setPendingFamily(null)}
+          onCancel={cancelAll}
         />
       )}
 
       {pendingMaterial && (
         <MaterialChoiceModal
+          heading={pendingMaterial.component ? `${pendingMaterial.component} material` : undefined}
           options={pendingMaterial.subgroups}
           onChoose={chooseMaterial}
-          onCancel={() => setPendingMaterial(null)}
+          onCancel={cancelAll}
         />
       )}
 
       {pendingChoice && (
         <BundleChoiceModal
-          choiceGroup={pendingChoice.choiceGroup}
+          choiceGroup={pendingChoice.component ? `${pendingChoice.component} colour` : pendingChoice.choiceGroup}
           options={pendingChoice.choiceOptions}
           onChoose={confirmChoice}
-          onCancel={() => setPendingChoice(null)}
+          onCancel={cancelAll}
+        />
+      )}
+
+      {pendingColorCount && (
+        <MaterialChoiceModal
+          heading="One colour or two?"
+          options={['One colour', 'Two colours']}
+          onChoose={(choice) => {
+            const args = pendingColorCount
+            setPendingColorCount(null)
+            if (choice === 'Two colours') setPendingTwoColorPick(args)
+            else setPendingChoice(args)
+          }}
+          onCancel={cancelAll}
+        />
+      )}
+
+      {pendingTwoColorPick && (
+        <TwoColorPickModal
+          choiceGroup={
+            pendingTwoColorPick.component ? `${pendingTwoColorPick.component} colours` : pendingTwoColorPick.choiceGroup
+          }
+          options={pendingTwoColorPick.choiceOptions}
+          onConfirm={confirmTwoColorChoice}
+          onCancel={cancelAll}
         />
       )}
     </div>
@@ -380,7 +581,7 @@ function MaterialChoiceModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-xs rounded-xl bg-white p-5 shadow-xl">
         <p className="text-sm font-semibold text-ink">{heading}</p>
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {options.map((subgroup) => (
             <button
               key={subgroup}
@@ -423,11 +624,12 @@ function BundleChoiceModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-xs rounded-xl bg-white p-5 shadow-xl">
-        {/* choiceGroup is the full header text as stored on the rule (e.g. "NEOGLIDE colour"
-            or "Upper Contour(NEOGLIDE)") — no fixed "Choose a ..." template, so each rule can
-            phrase its own prompt without a code change. */}
+        {/* choiceGroup is the full header text (either a component-aware "<Component> colour"
+            string, or the row's own literal choiceGroup text for ordinary single-component
+            triggers) — no fixed "Choose a ..." template, so each case can phrase its own
+            prompt without a code change. */}
         <p className="text-sm font-semibold text-ink">{choiceGroup}</p>
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {uniqueLabels.map((label) => (
             <button
               key={label}
@@ -443,6 +645,73 @@ function BundleChoiceModal({
           type="button"
           onClick={onCancel}
           className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-mist"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Reached only from pendingColorCount's "Two colours" branch (rows with allow_two_color_split,
+// i.e. Mitter/Mini Mitter) — checkbox-style pick of EXACTLY two colours, whose combined
+// quantity gets split roughly in half by confirmTwoColorChoice.
+function TwoColorPickModal({
+  choiceGroup,
+  options,
+  onConfirm,
+  onCancel,
+}: {
+  choiceGroup: string
+  options: PartBundleRule[]
+  onConfirm: (labels: [string, string]) => void
+  onCancel: () => void
+}) {
+  const uniqueLabels = [...new Set(options.map((r) => r.choice_label as string))]
+  const [picked, setPicked] = useState<string[]>([])
+
+  function toggleLabel(label: string) {
+    setPicked((prev) => {
+      if (prev.includes(label)) return prev.filter((l) => l !== label)
+      if (prev.length >= 2) return prev
+      return [...prev, label]
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-xs rounded-xl bg-white p-5 shadow-xl">
+        <p className="text-sm font-semibold text-ink">{choiceGroup}</p>
+        <p className="mt-0.5 text-xs text-slate-400">Pick exactly two colours — quantity splits between them.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {uniqueLabels.map((label) => {
+            const isPicked = picked.includes(label)
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => toggleLabel(label)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-center text-sm font-medium transition ${
+                  isPicked ? 'border-brand bg-mist text-ink' : 'border-slate-200 text-ink hover:border-slate-300'
+                }`}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          disabled={picked.length !== 2}
+          onClick={() => onConfirm(picked as [string, string])}
+          className="mt-3 w-full rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Confirm
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-mist"
         >
           Cancel
         </button>

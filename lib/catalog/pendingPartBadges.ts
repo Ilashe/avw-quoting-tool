@@ -5,11 +5,8 @@
 // MultiPartPicker.tsx). `tag` is the short text shown on the thumbnail's red corner badge;
 // `note` is the longer explanation shown in the hover detail card.
 export const PENDING_PART_BADGES: Record<string, { tag: string; note: string }> = {
-  'SW2': { tag: 'TBD', note: 'Colour/material not yet decided' },
-  'SW2-EL': { tag: 'TBD', note: 'Colour/material not yet decided' },
-  'RB1-0122': { tag: 'REVIEW', note: 'Under review — Rocker Height not yet selected' },
-  'RB1-EL-0122': { tag: 'REVIEW', note: 'Under review — Rocker Height not yet selected' },
-  'OT2-WSW4': { tag: 'TBD', note: 'Colour/material not yet decided' },
-  'OT2-WSW4-EL': { tag: 'TBD', note: 'Colour/material not yet decided' },
-  'TB3-0325': { tag: 'FLAG', note: 'Flagged — bundle logic not finalized yet' },
+  // Empty as of the Sept-2026 Equipment Options reconciliation — SW2/SW2-EL, RB1-0122/
+  // RB1-EL-0122, OT2-WSW4/OT2-WSW4-EL, and TB3-0325 all got real part_bundle_rules data and had
+  // their badges removed here. Add a new entry the same way when a future part genuinely needs
+  // one (see the file-level comment above for the pattern).
 }

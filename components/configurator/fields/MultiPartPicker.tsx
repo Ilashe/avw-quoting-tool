@@ -120,12 +120,38 @@ export default function MultiPartPicker({
   const [pendingColorCount, setPendingColorCount] = useState<ColorChoiceArgs | null>(null)
   const [pendingTwoColorPick, setPendingTwoColorPick] = useState<ColorChoiceArgs | null>(null)
 
+  // Wrap and Side Washer mix plain single colours (Black/Blue/Red) with two-colour pattern
+  // labels (e.g. "Blue Top / Black Bottom", "Black + Blue Alternating") under one material's
+  // choice rules. Rather than dumping all ~9 buttons in one list, ask "One Color or Two Color?"
+  // first and show only the matching subset — this is a filter on which EXISTING rows to show
+  // (still exactly one required part picked), unlike Mitter's allow_two_color_split (which
+  // splits ONE row's quantity across two picks). The single-colour vocabulary is fixed across
+  // every lookup table in the spec, so detecting it by label text (not a DB column) is safe.
+  const SINGLE_COLOR_LABELS = new Set(['Black', 'Blue', 'Red'])
+  const [pendingColorMode, setPendingColorMode] = useState<ColorChoiceArgs | null>(null)
+
   function openColorChoice(args: ColorChoiceArgs) {
     if (args.choiceOptions[0]?.allow_two_color_split) {
       setPendingColorCount(args)
-    } else {
-      setPendingChoice(args)
+      return
     }
+    const labels = new Set(args.choiceOptions.map((r) => r.choice_label as string))
+    const hasSingle = [...labels].some((l) => SINGLE_COLOR_LABELS.has(l))
+    const hasPattern = [...labels].some((l) => !SINGLE_COLOR_LABELS.has(l))
+    if (hasSingle && hasPattern) {
+      setPendingColorMode(args)
+      return
+    }
+    setPendingChoice(args)
+  }
+
+  function chooseColorMode(mode: 'One Color' | 'Two Color') {
+    if (!pendingColorMode) return
+    const filtered = pendingColorMode.choiceOptions.filter((r) =>
+      mode === 'One Color' ? SINGLE_COLOR_LABELS.has(r.choice_label as string) : !SINGLE_COLOR_LABELS.has(r.choice_label as string)
+    )
+    setPendingChoice({ ...pendingColorMode, choiceOptions: filtered })
+    setPendingColorMode(null)
   }
 
   function buildBundledPart(rule: PartBundleRule, triggerPartNumber: string, labelPrefix?: string): SelectedPart {
@@ -192,6 +218,7 @@ export default function MultiPartPicker({
     setPendingChoice(null)
     setPendingColorCount(null)
     setPendingTwoColorPick(null)
+    setPendingColorMode(null)
     setPendingComponentQueue(null)
   }
 
@@ -512,9 +539,18 @@ export default function MultiPartPicker({
         />
       )}
 
+      {pendingColorMode && (
+        <MaterialChoiceModal
+          heading="One Color or Two Color?"
+          options={['One Color', 'Two Color']}
+          onChoose={(mode) => chooseColorMode(mode as 'One Color' | 'Two Color')}
+          onCancel={cancelAll}
+        />
+      )}
+
       {pendingChoice && (
         <BundleChoiceModal
-          choiceGroup={pendingChoice.component ? `${pendingChoice.component} colour` : pendingChoice.choiceGroup}
+          choiceGroup={pendingChoice.component ? `${pendingChoice.component} color` : pendingChoice.choiceGroup}
           options={pendingChoice.choiceOptions}
           onChoose={confirmChoice}
           onCancel={cancelAll}
@@ -523,12 +559,12 @@ export default function MultiPartPicker({
 
       {pendingColorCount && (
         <MaterialChoiceModal
-          heading="One colour or two?"
-          options={['One colour', 'Two colours']}
+          heading="One color or two?"
+          options={['One color', 'Two colors']}
           onChoose={(choice) => {
             const args = pendingColorCount
             setPendingColorCount(null)
-            if (choice === 'Two colours') setPendingTwoColorPick(args)
+            if (choice === 'Two colors') setPendingTwoColorPick(args)
             else setPendingChoice(args)
           }}
           onCancel={cancelAll}
@@ -538,7 +574,7 @@ export default function MultiPartPicker({
       {pendingTwoColorPick && (
         <TwoColorPickModal
           choiceGroup={
-            pendingTwoColorPick.component ? `${pendingTwoColorPick.component} colours` : pendingTwoColorPick.choiceGroup
+            pendingTwoColorPick.component ? `${pendingTwoColorPick.component} colors` : pendingTwoColorPick.choiceGroup
           }
           options={pendingTwoColorPick.choiceOptions}
           onConfirm={confirmTwoColorChoice}
@@ -682,7 +718,7 @@ function TwoColorPickModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-xs rounded-xl bg-white p-5 shadow-xl">
         <p className="text-sm font-semibold text-ink">{choiceGroup}</p>
-        <p className="mt-0.5 text-xs text-slate-400">Pick exactly two colours — quantity splits between them.</p>
+        <p className="mt-0.5 text-xs text-slate-400">Pick exactly two colors — quantity splits between them.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {uniqueLabels.map((label) => {
             const isPicked = picked.includes(label)

@@ -5,8 +5,14 @@
 // MultiPartPicker.tsx). `tag` is the short text shown on the thumbnail's red corner badge;
 // `note` is the longer explanation shown in the hover detail card.
 export const PENDING_PART_BADGES: Record<string, { tag: string; note: string }> = {
-  // Empty as of the Sept-2026 Equipment Options reconciliation — SW2/SW2-EL, RB1-0122/
-  // RB1-EL-0122, OT2-WSW4/OT2-WSW4-EL, and TB3-0325 all got real part_bundle_rules data and had
-  // their badges removed here. Add a new entry the same way when a future part genuinely needs
-  // one (see the file-level comment above for the pattern).
+  // 2026-09-05: these 5 SKUs' real descriptions say "Double Mitter Curtain" / "Dual Mini
+  // Mitter" — "Double"/"Dual" is not a documented Mitter quantity modifier anywhere in the
+  // spec (only Wrap has one), so guessing whether it doubles the Mitter Lookup quantity would
+  // be invented logic. Flagged instead of built; remove once the client confirms the actual
+  // component/quantity logic.
+  'DM2-EL': { tag: 'REVIEW', note: 'Under review — "Double" quantity logic not yet confirmed' },
+  'OT2-DM2': { tag: 'REVIEW', note: 'Under review — "Double" quantity logic not yet confirmed' },
+  'OT2-DM2-EL': { tag: 'REVIEW', note: 'Under review — "Double" quantity logic not yet confirmed' },
+  'DMM5': { tag: 'REVIEW', note: 'Under review — "Dual" quantity logic not yet confirmed' },
+  'DMM5-EL': { tag: 'REVIEW', note: 'Under review — "Dual" quantity logic not yet confirmed' },
 }

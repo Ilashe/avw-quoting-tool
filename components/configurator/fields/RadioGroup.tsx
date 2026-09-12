@@ -12,6 +12,7 @@ export default function RadioGroup({
   value,
   onChange,
   required,
+  warningLabel,
 }: {
   label: string
   name: string
@@ -19,12 +20,14 @@ export default function RadioGroup({
   value: string | null
   onChange: (value: string | null) => void
   required?: boolean
+  warningLabel?: string
 }) {
   return (
     <div>
       <span className="block text-sm font-medium text-ink">
         {label}
         {required && <span className="ml-1 text-brand">*</span>}
+        {warningLabel && <span className="ml-2 text-xs font-semibold text-red-600">{warningLabel}</span>}
       </span>
       <div className="mt-2 flex flex-wrap gap-2">
         {options.map((option) => {

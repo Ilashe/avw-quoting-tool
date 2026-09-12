@@ -35,8 +35,19 @@ const CatalogField = memo(function CatalogField({
   visible: boolean
   excludedOptionsKey: string
 }) {
-  const { field_key, widget, required, min, max, unit, allow_none, helper_text, helper_link_text, helper_link_href } =
-    item.metadata
+  const {
+    field_key,
+    widget,
+    required,
+    min,
+    max,
+    unit,
+    allow_none,
+    helper_text,
+    helper_link_text,
+    helper_link_href,
+    warning_label,
+  } = item.metadata
   const value = useSelectionsStore((s) => s.values[field_key] ?? null)
   const setField = useSelectionsStore((s) => s.setField)
 
@@ -136,6 +147,7 @@ const CatalogField = memo(function CatalogField({
       name={field_key}
       label={item.name}
       required={required}
+      warningLabel={warning_label}
       options={fieldOptions}
       value={value as string | null}
       onChange={(v) => setField(field_key, v)}

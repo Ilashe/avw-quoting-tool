@@ -6,6 +6,7 @@ import { useConfiguratorStore } from '@/store/configuratorStore'
 import { useSelectionsStore, type SelectionValue } from '@/store/selectionsStore'
 import { useLineItemsStore } from '@/store/lineItemsStore'
 import { saveQuote, createNewQuote, finishQuote, revertToDraft } from '@/lib/actions/quotes'
+import { useClearHiddenFields } from '@/lib/rules/useClearHiddenFields'
 import type { LineItem } from '@/types/parts'
 import TopBar from './TopBar'
 import TabNav from './TabNav'
@@ -54,6 +55,7 @@ export default function ConfiguratorShell({
   const initLineItems = useLineItemsStore((s) => s.init)
   const resetLineItems = useLineItemsStore((s) => s.reset)
   const ActiveTabContent = TAB_COMPONENTS[activeTab]
+  useClearHiddenFields()
 
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState(initialStatus)

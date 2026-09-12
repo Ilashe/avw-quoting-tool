@@ -15,6 +15,9 @@ export interface EquipmentItemMetadata {
   helper_text?: string
   helper_link_text?: string
   helper_link_href?: string
+  // Small red label next to the field's own label, for fields still missing real logic/data
+  // (e.g. a stub question) — see components/configurator/fields/RadioGroup.tsx.
+  warning_label?: string
   // number / combobox_range widgets
   min?: number
   max?: number

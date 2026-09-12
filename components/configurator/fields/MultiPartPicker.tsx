@@ -25,6 +25,39 @@ function parseSubgroup(subgroup: string | null): { family: string | null; materi
 
 type ComponentStage = { component: string; choiceRules: PartBundleRule[] }
 
+interface FamilyChoiceArgs {
+  part: SelectedPart
+  coreRules: PartBundleRule[]
+  choiceRules: PartBundleRule[]
+  families: string[]
+}
+
+interface MaterialChoiceArgs {
+  part?: SelectedPart
+  coreRules: PartBundleRule[]
+  component: string | null
+  choiceRules: PartBundleRule[]
+  subgroups: string[]
+}
+
+type ColorChoiceArgs = {
+  part?: SelectedPart
+  coreRules: PartBundleRule[]
+  component: string | null
+  choiceGroup: string
+  choiceOptions: PartBundleRule[]
+}
+
+// One entry per prompt left behind by a forward transition (chooseFamily, chooseMaterial, the
+// color-mode/color-count choice) — goBack() pops the last one and restores it. Reset per
+// trigger/stage (see toggle() and openComponentStage), so Back never reaches across a finalized
+// component-queue stage or a completed/cancelled flow — only within one prompt chain.
+type PendingSnapshot =
+  | { kind: 'family'; state: FamilyChoiceArgs }
+  | { kind: 'material'; state: MaterialChoiceArgs }
+  | { kind: 'colorMode'; state: ColorChoiceArgs }
+  | { kind: 'colorCount'; state: ColorChoiceArgs }
+
 export default function MultiPartPicker({
   label,
   options,
@@ -74,25 +107,14 @@ export default function MultiPartPicker({
   // "Drycloth"), then pick a colour within that subgroup. Populated when a trigger's (or a
   // component stage's) choice rules span more than one distinct choice_subgroup; resolves into
   // pendingChoice once a subgroup is picked (see chooseMaterial).
-  const [pendingMaterial, setPendingMaterial] = useState<{
-    part?: SelectedPart
-    coreRules: PartBundleRule[]
-    component: string | null
-    choiceRules: PartBundleRule[]
-    subgroups: string[]
-  } | null>(null)
+  const [pendingMaterial, setPendingMaterial] = useState<MaterialChoiceArgs | null>(null)
 
   // A few triggers need a THIRD stage ahead of material: pick a category first (e.g. "Wrap" vs
   // "Mitter curtain"), where each category has its own different set of materials. Encoded as a
   // "Category:Material" compound value in choice_subgroup (see parseSubgroup) rather than a new
   // DB column. This is an EXCLUSIVE pick (e.g. Rocker's Height) — never combined with the
   // additive component queue below (no live trigger uses both mechanisms at once).
-  const [pendingFamily, setPendingFamily] = useState<{
-    part: SelectedPart
-    coreRules: PartBundleRule[]
-    choiceRules: PartBundleRule[]
-    families: string[]
-  } | null>(null)
+  const [pendingFamily, setPendingFamily] = useState<FamilyChoiceArgs | null>(null)
 
   // Additive queue: when a trigger's choice rules span 2+ distinct `component` values (e.g. a
   // combo's separate Wrap and Mitter questions), EVERY component must be resolved in turn —
@@ -106,12 +128,23 @@ export default function MultiPartPicker({
     resolved: SelectedPart[]
   } | null>(null)
 
-  type ColorChoiceArgs = {
-    part?: SelectedPart
-    coreRules: PartBundleRule[]
-    component: string | null
-    choiceGroup: string
-    choiceOptions: PartBundleRule[]
+  // Back-navigation stack — see PendingSnapshot above.
+  const [history, setHistory] = useState<PendingSnapshot[]>([])
+
+  function goBack() {
+    const last = history[history.length - 1]
+    if (!last) return
+    setHistory((h) => h.slice(0, -1))
+    setPendingFamily(null)
+    setPendingMaterial(null)
+    setPendingColorMode(null)
+    setPendingColorCount(null)
+    setPendingChoice(null)
+    setPendingTwoColorPick(null)
+    if (last.kind === 'family') setPendingFamily(last.state)
+    else if (last.kind === 'material') setPendingMaterial(last.state)
+    else if (last.kind === 'colorMode') setPendingColorMode(last.state)
+    else if (last.kind === 'colorCount') setPendingColorCount(last.state)
   }
 
   // Mitter's (and Mini Mitter's) colour rows carry allow_two_color_split — asked "one colour or
@@ -150,6 +183,7 @@ export default function MultiPartPicker({
     const filtered = pendingColorMode.choiceOptions.filter((r) =>
       mode === 'One Color' ? SINGLE_COLOR_LABELS.has(r.choice_label as string) : !SINGLE_COLOR_LABELS.has(r.choice_label as string)
     )
+    setHistory((h) => [...h, { kind: 'colorMode', state: pendingColorMode }])
     setPendingChoice({ ...pendingColorMode, choiceOptions: filtered })
     setPendingColorMode(null)
   }
@@ -173,8 +207,10 @@ export default function MultiPartPicker({
   }
 
   // Opens the material or colour prompt for one component-queue stage. Never opens the
-  // exclusive "choose a category" modal — every stage in the queue always gets asked.
+  // exclusive "choose a category" modal — every stage in the queue always gets asked. Starts
+  // this stage's own Back history fresh — Back never reaches into an already-finalized stage.
   function openComponentStage(stage: ComponentStage) {
+    setHistory([])
     const subgroups = [
       ...new Set(stage.choiceRules.map((r) => r.choice_subgroup).filter((s): s is string => !!s)),
     ]
@@ -205,6 +241,7 @@ export default function MultiPartPicker({
       )
       onChange([...selected, pendingComponentQueue.part, ...coreParts, ...resolved])
       setPendingComponentQueue(null)
+      setHistory([])
       return
     }
 
@@ -220,6 +257,7 @@ export default function MultiPartPicker({
     setPendingTwoColorPick(null)
     setPendingColorMode(null)
     setPendingComponentQueue(null)
+    setHistory([])
   }
 
   function toggle(part: SelectedPart) {
@@ -229,6 +267,7 @@ export default function MultiPartPicker({
       return
     }
 
+    setHistory([])
     const rulesForPart = bundleRules.filter((r) => r.trigger_part_number === part.part_number)
     const coreRules = rulesForPart.filter((r) => !r.choice_group)
     const choiceRules = rulesForPart.filter((r) => r.choice_group)
@@ -297,6 +336,7 @@ export default function MultiPartPicker({
 
   function chooseFamily(family: string) {
     if (!pendingFamily) return
+    setHistory((h) => [...h, { kind: 'family', state: pendingFamily }])
     const filtered = pendingFamily.choiceRules.filter((r) => parseSubgroup(r.choice_subgroup).family === family)
     const materials = [
       ...new Set(filtered.map((r) => parseSubgroup(r.choice_subgroup).material).filter((m): m is string => !!m)),
@@ -324,6 +364,7 @@ export default function MultiPartPicker({
 
   function chooseMaterial(subgroup: string) {
     if (!pendingMaterial) return
+    setHistory((h) => [...h, { kind: 'material', state: pendingMaterial }])
     const filtered = pendingMaterial.choiceRules.filter((r) => {
       const parsed = parseSubgroup(r.choice_subgroup)
       return (parsed.family ? parsed.material : r.choice_subgroup) === subgroup
@@ -359,6 +400,7 @@ export default function MultiPartPicker({
 
     onChange([...selected, pendingChoice.part!, ...additions])
     setPendingChoice(null)
+    setHistory([])
   }
 
   // Splits the row's stored quantity roughly in half across two picked colours — the
@@ -392,6 +434,7 @@ export default function MultiPartPicker({
 
     onChange([...selected, pendingTwoColorPick.part!, ...additions])
     setPendingTwoColorPick(null)
+    setHistory([])
   }
 
   // Card is a fixed 192px (w-48) wide, roughly 230px tall (image + text + padding). Positioned
@@ -527,6 +570,7 @@ export default function MultiPartPicker({
           options={pendingFamily.families}
           onChoose={chooseFamily}
           onCancel={cancelAll}
+          onBack={history.length > 0 ? goBack : undefined}
         />
       )}
 
@@ -536,6 +580,7 @@ export default function MultiPartPicker({
           options={pendingMaterial.subgroups}
           onChoose={chooseMaterial}
           onCancel={cancelAll}
+          onBack={history.length > 0 ? goBack : undefined}
         />
       )}
 
@@ -545,6 +590,7 @@ export default function MultiPartPicker({
           options={['One Color', 'Two Color']}
           onChoose={(mode) => chooseColorMode(mode as 'One Color' | 'Two Color')}
           onCancel={cancelAll}
+          onBack={history.length > 0 ? goBack : undefined}
         />
       )}
 
@@ -554,6 +600,7 @@ export default function MultiPartPicker({
           options={pendingChoice.choiceOptions}
           onChoose={confirmChoice}
           onCancel={cancelAll}
+          onBack={history.length > 0 ? goBack : undefined}
         />
       )}
 
@@ -563,11 +610,13 @@ export default function MultiPartPicker({
           options={['One color', 'Two colors']}
           onChoose={(choice) => {
             const args = pendingColorCount
+            setHistory((h) => [...h, { kind: 'colorCount', state: args }])
             setPendingColorCount(null)
             if (choice === 'Two colors') setPendingTwoColorPick(args)
             else setPendingChoice(args)
           }}
           onCancel={cancelAll}
+          onBack={history.length > 0 ? goBack : undefined}
         />
       )}
 
@@ -579,6 +628,7 @@ export default function MultiPartPicker({
           options={pendingTwoColorPick.choiceOptions}
           onConfirm={confirmTwoColorChoice}
           onCancel={cancelAll}
+          onBack={history.length > 0 ? goBack : undefined}
         />
       )}
     </div>
@@ -607,11 +657,13 @@ function MaterialChoiceModal({
   options,
   onChoose,
   onCancel,
+  onBack,
 }: {
   heading?: string
   options: string[]
   onChoose: (subgroup: string) => void
   onCancel: () => void
+  onBack?: () => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -629,10 +681,19 @@ function MaterialChoiceModal({
             </button>
           ))}
         </div>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-ink transition hover:bg-mist"
+          >
+            ← Back
+          </button>
+        )}
         <button
           type="button"
           onClick={onCancel}
-          className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-mist"
+          className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-mist"
         >
           Cancel
         </button>
@@ -646,11 +707,13 @@ function BundleChoiceModal({
   options,
   onChoose,
   onCancel,
+  onBack,
 }: {
   choiceGroup: string
   options: PartBundleRule[]
   onChoose: (label: string) => void
   onCancel: () => void
+  onBack?: () => void
 }) {
   // Multiple rule rows can share the same choice_label (e.g. CB0405's "Black" covers both the
   // lower-contour and upper-contour brush parts) — render one button per unique label, in
@@ -677,10 +740,19 @@ function BundleChoiceModal({
             </button>
           ))}
         </div>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-ink transition hover:bg-mist"
+          >
+            ← Back
+          </button>
+        )}
         <button
           type="button"
           onClick={onCancel}
-          className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-mist"
+          className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 transition hover:bg-mist"
         >
           Cancel
         </button>
@@ -697,11 +769,13 @@ function TwoColorPickModal({
   options,
   onConfirm,
   onCancel,
+  onBack,
 }: {
   choiceGroup: string
   options: PartBundleRule[]
   onConfirm: (labels: [string, string]) => void
   onCancel: () => void
+  onBack?: () => void
 }) {
   const uniqueLabels = [...new Set(options.map((r) => r.choice_label as string))]
   const [picked, setPicked] = useState<string[]>([])
@@ -744,6 +818,15 @@ function TwoColorPickModal({
         >
           Confirm
         </button>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-ink transition hover:bg-mist"
+          >
+            ← Back
+          </button>
+        )}
         <button
           type="button"
           onClick={onCancel}

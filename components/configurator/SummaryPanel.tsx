@@ -41,6 +41,7 @@ export default function SummaryPanel() {
   for (const field of generalFields) {
     const raw = values[field.key]
     if (raw === null || raw === undefined || raw === '') continue
+    if (typeof raw === 'string' && raw.toLowerCase() === 'no') continue
     const displayValue =
       field.widget === 'text' || field.widget === 'address_autocomplete'
         ? String(raw)
@@ -71,6 +72,7 @@ export default function SummaryPanel() {
     const { field_key, widget, unit } = item.metadata
     const raw = values[field_key]
     if (raw === null || raw === undefined || raw === '') continue
+    if (typeof raw === 'string' && raw.toLowerCase() === 'no') continue
     if (widget === 'pending') continue
     if (!isFieldVisible(rules, values, field_key)) continue
     if (suppressedTriggerFields.has(field_key)) continue

@@ -12,6 +12,7 @@ export default function SelectField({
   onChange,
   required,
   placeholder = 'Select…',
+  warningLabel,
 }: {
   label: string
   options: SelectOption[]
@@ -19,12 +20,14 @@ export default function SelectField({
   onChange: (value: string) => void
   required?: boolean
   placeholder?: string
+  warningLabel?: string
 }) {
   return (
     <div>
       <label className="block text-sm font-medium text-ink">
         {label}
         {required && <span className="ml-1 text-brand">*</span>}
+        {warningLabel && <span className="ml-2 text-xs font-semibold text-red-600">{warningLabel}</span>}
       </label>
       <select
         value={value ?? ''}

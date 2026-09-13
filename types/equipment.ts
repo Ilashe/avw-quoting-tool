@@ -18,6 +18,9 @@ export interface EquipmentItemMetadata {
   // Small red label next to the field's own label, for fields still missing real logic/data
   // (e.g. a stub question) — see components/configurator/fields/RadioGroup.tsx.
   warning_label?: string
+  // text widget only — renders disabled/greyed; value is derived (see useApplyForcedValues),
+  // never typed by the user.
+  readonly?: boolean
   // number / combobox_range widgets
   min?: number
   max?: number

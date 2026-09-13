@@ -47,6 +47,7 @@ const CatalogField = memo(function CatalogField({
     helper_link_text,
     helper_link_href,
     warning_label,
+    readonly,
   } = item.metadata
   const value = useSelectionsStore((s) => s.values[field_key] ?? null)
   const setField = useSelectionsStore((s) => s.setField)
@@ -101,7 +102,13 @@ const CatalogField = memo(function CatalogField({
           type="text"
           value={(value as string) ?? ''}
           onChange={(e) => setField(field_key, e.target.value)}
-          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/30"
+          readOnly={readonly}
+          disabled={readonly}
+          className={`mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition ${
+            readonly
+              ? 'cursor-not-allowed bg-slate-50 text-slate-500'
+              : 'text-ink focus:border-brand focus:ring-2 focus:ring-brand/30'
+          }`}
         />
       </div>
     )
@@ -135,6 +142,7 @@ const CatalogField = memo(function CatalogField({
       <SelectField
         label={item.name}
         required={required}
+        warningLabel={warning_label}
         options={fieldOptions}
         value={value as string | null}
         onChange={(v) => setField(field_key, v)}

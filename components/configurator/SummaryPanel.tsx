@@ -132,11 +132,10 @@ export default function SummaryPanel() {
   const conveyorInputs = {
     series: (values['conveyor_series'] as string) ?? null,
     drive: (values['conveyor_drive'] as string) ?? null,
-    config: (values['conveyor_config'] as string) ?? null,
     horsepower: (values['conveyor_horsepower'] as string) ?? null,
     lengthFt: (values['conveyor_length'] as number | string) ?? null,
-    stainlessSteel: (values['conveyor_stainless_steel'] as string) ?? null,
-    primeredSteel: (values['conveyor_primered_steel'] as string) ?? null,
+    steelType: (values['conveyor_steel_type'] as string) ?? null,
+    beltType: (values['conveyor_belt_type'] as string) ?? null,
   }
   const conveyorPartNumber = buildConveyorPartNumber(conveyorInputs)
   // Real pricing/description from the client's Items export (imported into `parts`) always wins
@@ -214,7 +213,9 @@ export default function SummaryPanel() {
                 {itemRows.map((row) => (
                   <Fragment key={row.key}>
                     <span className="min-w-0 truncate font-medium text-slate-100">{row.item}</span>
-                    <span className="line-clamp-2 min-w-0 text-xs text-slate-300">{row.description}</span>
+                    <span className="line-clamp-2 min-w-0 text-xs text-slate-300" title={row.description}>
+                      {row.description}
+                    </span>
                     <span className="text-right text-xs text-slate-300">{row.quantity ?? ''}</span>
                     <span className="text-right text-xs text-slate-300">
                       {row.unitPrice !== null ? formatCurrency(row.unitPrice) : ''}

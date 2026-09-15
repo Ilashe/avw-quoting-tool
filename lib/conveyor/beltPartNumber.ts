@@ -1,9 +1,10 @@
 // Belt conveyor part-number generator — ported from the client-supplied reference
 // (beltPartNumber.js / "Belt Part Number Nomenclature.xlsx"), adapted to this app's actual
 // Conveyor section field option_values (see equipment_options for conveyor_series,
-// conveyor_drive, conveyor_config, conveyor_horsepower, conveyor_length, conveyor_steel_type).
+// conveyor_drive, conveyor_horsepower, conveyor_length, conveyor_steel_type,
+// conveyor_belt_type).
 //
-// PART NUMBER SHAPE:  <seriesCode><driveCode><config> -10 <hp> - <lengthFt> [-SSPIN | -SSCS]
+// PART NUMBER SHAPE:  <seriesCode><driveCode><config> -10 <hp> - <lengthFt>
 // Worked example: BCD3-1020-120 (Series BC, Dual drive, Config 3, gearbox -10, 20 HP, 120 ft).
 //
 // GB (the gearbox code) is fixed at -10 across every configuration per the client's explicit
@@ -15,6 +16,20 @@ const GB = -10
 // which correctly blanks the whole generated part number rather than guessing a prefix.
 const SERIES_CODES: Record<string, string> = {
   bc_30_inches: 'BC',
+}
+
+// Config is no longer a user-facing field — the client asked (2026-09-15) for Type of Steel
+// (Stainless/Primered, mutually exclusive) and Type of Belt (Standard/Hybrid) to replace it, with
+// the app deriving the Config code itself. Only the 30" series (bc_30_inches) has a known
+// mapping today — matches the reference "Configuration" dropdown's 30"-width rows exactly
+// (3/6/7/8; the 42"/36"/54" rows, config 4/5/10, aren't reachable since Series only offers
+// bc_30_inches so far). A combination with no entry here — i.e. any future non-30" series —
+// correctly blanks the whole part number, same "not yet defined" convention as SERIES_CODES.
+const CONFIG_CODES_30IN: Record<string, string> = {
+  'primered_steel|standard': '3',
+  'stainless_steel|standard': '6',
+  'primered_steel|hybrid': '7',
+  'stainless_steel|hybrid': '8',
 }
 
 const DRIVE_CODES: Record<string, string> = {
@@ -51,9 +66,6 @@ const COLOR_LABELS: Record<string, string> = {
   yellow: '(Yellow)',
 }
 
-const SSPIN_LABEL = 'Stainless Steel Pins'
-const SSCS_LABEL = 'Stainless Steel Takeup and Drive Only'
-
 function parseHorsepower(value: string): number | null {
   const match = /^(\d+)hp$/.exec(value)
   return match ? Number(match[1]) : null
@@ -62,53 +74,48 @@ function parseHorsepower(value: string): number | null {
 export interface ConveyorPartNumberInputs {
   series: string | null
   drive: string | null
-  config: string | null
   horsepower: string | null
   lengthFt: number | string | null
-  // Stainless Steel and Primered Steel are independent Yes/No toggles — either, neither, or
-  // BOTH can be "yes" at once (confirmed against real priced SKUs, e.g.
-  // "BCD6-1020-159-SSCS-SSPIN" exists as its own line item). Not mutually exclusive.
-  stainlessSteel: string | null // 'yes' | 'no' | null
-  primeredSteel: string | null // 'yes' | 'no' | null
+  steelType: string | null // 'stainless_steel' | 'primered_steel' | null — mutually exclusive
+  beltType: string | null // 'standard' | 'hybrid' | null
+}
+
+function resolveConfig(inputs: Pick<ConveyorPartNumberInputs, 'series' | 'steelType' | 'beltType'>): string | null {
+  if (inputs.series !== 'bc_30_inches' || !inputs.steelType || !inputs.beltType) return null
+  return CONFIG_CODES_30IN[`${inputs.steelType}|${inputs.beltType}`] ?? null
 }
 
 /**
- * Builds the belt conveyor part number, e.g. "BCD3-1020-120" or "BCN6-1010-90-SSCS-SSPIN".
- * Returns null (render as blank) unless series, drive, config, horsepower, and length are ALL
- * set — matches this app's "nothing selected means nothing shown" convention (see
- * useApplyForcedValues). Stainless/Primered Steel are optional (suffix-only, and independent of
- * each other) — Stainless -> -SSPIN, Primered -> -SSCS, both -> -SSCS-SSPIN in that order
- * (confirmed against every real "both" SKU in the pricing export — SSCS always comes first).
+ * Builds the belt conveyor part number, e.g. "BCD3-1020-120". Returns null (render as blank)
+ * unless series, drive, steel type, belt type, horsepower, and length are ALL set — matches
+ * this app's "nothing selected means nothing shown" convention (see useApplyForcedValues).
  */
 export function buildConveyorPartNumber(inputs: ConveyorPartNumberInputs): string | null {
   const seriesCode = inputs.series ? SERIES_CODES[inputs.series] : undefined
   const driveCode = inputs.drive ? DRIVE_CODES[inputs.drive] : undefined
-  const config = inputs.config ? Number(inputs.config) : null
+  const config = resolveConfig(inputs)
   const hp = inputs.horsepower ? parseHorsepower(inputs.horsepower) : null
   const lengthFt = typeof inputs.lengthFt === 'number' ? inputs.lengthFt : null
 
   if (!seriesCode || !driveCode || !config || !hp || !lengthFt) return null
 
-  let partNumber = `${seriesCode}${driveCode}${config}${GB}${hp}-${Math.round(lengthFt)}`
-  if (inputs.primeredSteel === 'yes') partNumber += '-SSCS'
-  if (inputs.stainlessSteel === 'yes') partNumber += '-SSPIN'
-  return partNumber
+  return `${seriesCode}${driveCode}${config}${GB}${hp}-${Math.round(lengthFt)}`
 }
 
 /**
  * Fallback description formula — used ONLY when the generated part number has no exact match
  * in the real pricing export (Items.xlsx, imported into `parts`); real data always wins when it
- * exists (see SummaryPanel.tsx). Ported from the client-supplied reference file's
- * CONCATENATE formula, including its exact quirks (the "10 Series " trailing-space double-comma,
- * SSPIN appended before SSCS here — the reference file gives the description this order
- * deliberately, even though the PART NUMBER suffix order is SSCS-then-SSPIN; the two are
- * independent formulas, not required to match).
+ * exists (see SummaryPanel.tsx). Ported from the client-supplied reference file's CONCATENATE
+ * formula, including its exact quirk (the "10 Series " trailing-space double-comma). The belt
+ * color (client instruction, 2026-09-15) is folded into this description rather than shown as
+ * its own Quote Summary row.
  * Returns null under the same required-fields gating as buildConveyorPartNumber.
  */
 export function buildConveyorDescription(
   inputs: ConveyorPartNumberInputs & { colorId: string | null }
 ): string | null {
-  const config = inputs.config ? CONFIG_TABLE[inputs.config] : undefined
+  const configCode = resolveConfig(inputs)
+  const config = configCode ? CONFIG_TABLE[configCode] : undefined
   const driveLabel = inputs.drive ? DRIVE_DESC_LABELS[inputs.drive] : undefined
   const hp = inputs.horsepower ? parseHorsepower(inputs.horsepower) : null
   const lengthFt = typeof inputs.lengthFt === 'number' ? inputs.lengthFt : null
@@ -116,20 +123,19 @@ export function buildConveyorDescription(
   if (!config || !driveLabel || !hp || !lengthFt) return null
 
   const colorLabel = inputs.colorId ? (COLOR_LABELS[inputs.colorId] ?? '') : ''
-  let s = `${config.desc}, ${hp}${driveLabel}, ${Math.round(lengthFt)} Feet, ${config.frame}, Glide Plates, ${config.beltType} Polymer Belt ${colorLabel}`
-  if (inputs.stainlessSteel === 'yes') s += `, ${SSPIN_LABEL}`
-  if (inputs.primeredSteel === 'yes') s += `, ${SSCS_LABEL}`
-  return s
+  return `${config.desc}, ${hp}${driveLabel}, ${Math.round(lengthFt)} Feet, ${config.frame}, Glide Plates, ${config.beltType} Polymer Belt ${colorLabel}`
 }
 
-// The 7 Conveyor field_keys that feed the generated part number — these are suppressed as
-// individual Quote Summary rows (SummaryPanel.tsx) in favor of the one combined row.
+// The Conveyor field_keys that feed the generated part number — these are suppressed as
+// individual Quote Summary rows (SummaryPanel.tsx) in favor of the one combined row. Belt Color
+// is included here (client instruction, 2026-09-15) even though it's cosmetic-only in the part
+// number itself — it still shouldn't show as its own row, only folded into the description.
 export const CONVEYOR_PART_NUMBER_FIELD_KEYS = [
   'conveyor_series',
   'conveyor_drive',
-  'conveyor_config',
+  'conveyor_steel_type',
+  'conveyor_belt_type',
   'conveyor_horsepower',
   'conveyor_length',
-  'conveyor_stainless_steel',
-  'conveyor_primered_steel',
+  'belt_color',
 ] as const

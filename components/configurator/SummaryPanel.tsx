@@ -8,7 +8,15 @@ import { generalFields } from '@/lib/configurator/generalFields'
 import { isFieldVisible } from '@/lib/rules/engine'
 import { computeQuoteTotal } from '@/lib/pricing'
 import { formatCurrency } from '@/lib/format'
+import { usePartsByNumbers } from '@/lib/catalog/usePartsByNumbers'
+import {
+  buildConveyorPartNumber,
+  buildConveyorDescription,
+  CONVEYOR_PART_NUMBER_FIELD_KEYS,
+} from '@/lib/conveyor/beltPartNumber'
 import type { SelectedPart } from '@/types/parts'
+
+const CONVEYOR_PART_NUMBER_FIELDS = new Set<string>(CONVEYOR_PART_NUMBER_FIELD_KEYS)
 
 interface HeaderRow {
   key: string
@@ -76,6 +84,9 @@ export default function SummaryPanel() {
     if (widget === 'pending') continue
     if (!isFieldVisible(rules, values, field_key)) continue
     if (suppressedTriggerFields.has(field_key)) continue
+    // Series/Drive/Config/Horsepower/Length/Type-of-Steel never show as their own rows — they
+    // only ever appear combined into the single generated "Belt Part Number" row below.
+    if (CONVEYOR_PART_NUMBER_FIELDS.has(field_key)) continue
 
     // Robot Arch (and any future multi_part_picker field): show each picked part's own
     // detail row instead of a generic "Yes". The same part can be selectable under more
@@ -116,6 +127,37 @@ export default function SummaryPanel() {
     }
 
     itemRows.push({ key: field_key, item: item.name, description, quantity: null, unitPrice: null, price: 0 })
+  }
+
+  const conveyorInputs = {
+    series: (values['conveyor_series'] as string) ?? null,
+    drive: (values['conveyor_drive'] as string) ?? null,
+    config: (values['conveyor_config'] as string) ?? null,
+    horsepower: (values['conveyor_horsepower'] as string) ?? null,
+    lengthFt: (values['conveyor_length'] as number | string) ?? null,
+    stainlessSteel: (values['conveyor_stainless_steel'] as string) ?? null,
+    primeredSteel: (values['conveyor_primered_steel'] as string) ?? null,
+  }
+  const conveyorPartNumber = buildConveyorPartNumber(conveyorInputs)
+  // Real pricing/description from the client's Items export (imported into `parts`) always wins
+  // when the exact generated part number has been priced; buildConveyorDescription's formula is
+  // only a fallback for combinations with no real match yet (price stays $0 in that case, same
+  // "no data = no guessed price" convention used everywhere else in this app).
+  const { parts: conveyorPartLookup } = usePartsByNumbers(conveyorPartNumber ? [conveyorPartNumber] : [])
+  if (conveyorPartNumber) {
+    const realPart = conveyorPartLookup.find((p) => p.part_number === conveyorPartNumber)
+    const description =
+      realPart?.description ??
+      buildConveyorDescription({ ...conveyorInputs, colorId: (values['belt_color'] as string) ?? null }) ??
+      ''
+    itemRows.push({
+      key: 'conveyor_part_number',
+      item: conveyorPartNumber,
+      description,
+      quantity: 1,
+      unitPrice: realPart?.unit_price ?? 0,
+      price: realPart?.unit_price ?? 0,
+    })
   }
 
   for (const line of lineItems) {

@@ -1,0 +1,16 @@
+-- AVW Quoting Tool — migration 0068
+-- Client instructions (2026-09-13): add two new dropdown fields to the Conveyor section,
+-- positioned directly under "Drive" (EQ-CONV-002A) and before "Horsepower" (EQ-CONV-002B):
+--   - "Series" (EQ-CONV-002A1, field_key conveyor_series) — dropdown, currently a single option
+--     "BC - 30 inches" (value bc_30_inches). Client said more options will be added later —
+--     built as an ordinary `select` widget so new equipment_options rows are all that's needed.
+--   - "Config" (EQ-CONV-002A2, field_key conveyor_config) — dropdown with options 3, 6, 7, 8.
+-- SKUs chosen (002A1/002A2) so both sort directly between Drive (002A) and Horsepower (002B) —
+-- EquipmentTab.tsx renders fields sorted by SKU string within a category — without renumbering
+-- any existing Conveyor item.
+--
+-- Applied live via service-role script (scripts/apply-migration-0068.mjs), same approach as
+-- every equipment_items/equipment_options change since migration 0012; this file is the
+-- re-runnable historical record.
+
+-- (Pure data — no schema change. See scripts/apply-migration-0068.mjs for the actual inserts.)

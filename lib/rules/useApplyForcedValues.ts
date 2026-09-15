@@ -21,8 +21,14 @@ export function useApplyForcedValues() {
     if (items.length === 0) return
     for (const item of items) {
       const fieldKey = item.metadata.field_key
-      const forced = getForcedValue(rules, values, fieldKey)
-      if (forced !== null && values[fieldKey] !== forced) {
+      // Only manage fields that actually have a set_value rule — untouched fields (the vast
+      // majority) are never blanked by this hook. For a managed field, no matching rule (the
+      // trigger has no value, or was cleared/changed to something with no set_value row) means
+      // "nothing should be there" — force blank rather than leaving a stale forced value behind.
+      const isForcedField = rules.some((r) => r.action_type === 'set_value' && r.target_field === fieldKey)
+      if (!isForcedField) continue
+      const forced = getForcedValue(rules, values, fieldKey) ?? ''
+      if (values[fieldKey] !== forced) {
         setField(fieldKey, forced)
       }
     }

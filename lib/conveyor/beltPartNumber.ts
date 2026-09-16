@@ -56,16 +56,6 @@ const CONFIG_TABLE: Record<string, { desc: string; frame: string; beltType: stri
   '10': { desc: '54" Dual Belt, includes 10 Series ', frame: 'Stainless Steel Frame', beltType: 'Standard' },
 }
 
-// Belt color: cosmetic only, appears in the description as "(Blue)" etc., never in the part
-// number itself. Matches this app's Belt Color field (belt_color: black/blue/red) plus yellow
-// for parity with the reference file, even though Belt Color doesn't currently offer it.
-const COLOR_LABELS: Record<string, string> = {
-  blue: '(Blue)',
-  black: '(Black)',
-  red: '(Red)',
-  yellow: '(Yellow)',
-}
-
 function parseHorsepower(value: string): number | null {
   const match = /^(\d+)hp$/.exec(value)
   return match ? Number(match[1]) : null
@@ -106,14 +96,13 @@ export function buildConveyorPartNumber(inputs: ConveyorPartNumberInputs): strin
  * Fallback description formula — used ONLY when the generated part number has no exact match
  * in the real pricing export (Items.xlsx, imported into `parts`); real data always wins when it
  * exists (see SummaryPanel.tsx). Ported from the client-supplied reference file's CONCATENATE
- * formula, including its exact quirk (the "10 Series " trailing-space double-comma). The belt
- * color (client instruction, 2026-09-15) is folded into this description rather than shown as
- * its own Quote Summary row.
+ * formula, including its exact quirk (the "10 Series " trailing-space double-comma). Belt
+ * Specifications selections (color, tire pusher, safety stripe, etc.) are NOT folded in here —
+ * SummaryPanel appends them as a uniform suffix to whichever description wins (this formula or
+ * the real part's), so they show up either way (client instruction, 2026-09-16).
  * Returns null under the same required-fields gating as buildConveyorPartNumber.
  */
-export function buildConveyorDescription(
-  inputs: ConveyorPartNumberInputs & { colorId: string | null }
-): string | null {
+export function buildConveyorDescription(inputs: ConveyorPartNumberInputs): string | null {
   const configCode = resolveConfig(inputs)
   const config = configCode ? CONFIG_TABLE[configCode] : undefined
   const driveLabel = inputs.drive ? DRIVE_DESC_LABELS[inputs.drive] : undefined
@@ -122,14 +111,15 @@ export function buildConveyorDescription(
 
   if (!config || !driveLabel || !hp || !lengthFt) return null
 
-  const colorLabel = inputs.colorId ? (COLOR_LABELS[inputs.colorId] ?? '') : ''
-  return `${config.desc}, ${hp}${driveLabel}, ${Math.round(lengthFt)} Feet, ${config.frame}, Glide Plates, ${config.beltType} Polymer Belt ${colorLabel}`
+  return `${config.desc}, ${hp}${driveLabel}, ${Math.round(lengthFt)} Feet, ${config.frame}, Glide Plates, ${config.beltType} Polymer Belt`
 }
 
-// The Conveyor field_keys that feed the generated part number — these are suppressed as
-// individual Quote Summary rows (SummaryPanel.tsx) in favor of the one combined row. Belt Color
-// is included here (client instruction, 2026-09-15) even though it's cosmetic-only in the part
-// number itself — it still shouldn't show as its own row, only folded into the description.
+// The Conveyor field_keys that feed the generated part number, plus every other Belt
+// Specifications selection (client instruction, 2026-09-16: everything selected in Belt
+// Specifications folds into the generated part number's description instead of standing alone —
+// Roller Correlator is the one exception, since it carries its own real priced part and stays a
+// separate line item). All suppressed as individual Quote Summary rows (SummaryPanel.tsx) in
+// favor of the one combined row.
 export const CONVEYOR_PART_NUMBER_FIELD_KEYS = [
   'conveyor_series',
   'conveyor_drive',
@@ -138,4 +128,21 @@ export const CONVEYOR_PART_NUMBER_FIELD_KEYS = [
   'conveyor_horsepower',
   'conveyor_length',
   'belt_color',
+  'flight_color',
+  'safety_stripe',
+  'safety_stripe_color',
+  'flight_size',
+  'flight_spacing',
+] as const
+
+// Ordered list of Belt Specifications field_keys folded into the generated part number's
+// description as "<Item Name>: <selected label>" clauses (client instruction, 2026-09-16) — does
+// NOT include Roller Correlator (real priced part, stays its own line item) or the plain
+// Safety Stripe Yes/No trigger (redundant once Safety Stripe Color is shown).
+export const CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS = [
+  'belt_color',
+  'flight_color',
+  'safety_stripe_color',
+  'flight_size',
+  'flight_spacing',
 ] as const

@@ -13,6 +13,7 @@ import {
   buildConveyorPartNumber,
   buildConveyorDescription,
   CONVEYOR_PART_NUMBER_FIELD_KEYS,
+  CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS,
 } from '@/lib/conveyor/beltPartNumber'
 import type { SelectedPart } from '@/types/parts'
 
@@ -145,10 +146,20 @@ export default function SummaryPanel() {
   const { parts: conveyorPartLookup } = usePartsByNumbers(conveyorPartNumber ? [conveyorPartNumber] : [])
   if (conveyorPartNumber) {
     const realPart = conveyorPartLookup.find((p) => p.part_number === conveyorPartNumber)
-    const description =
-      realPart?.description ??
-      buildConveyorDescription({ ...conveyorInputs, colorId: (values['belt_color'] as string) ?? null }) ??
-      ''
+    const baseDescription = realPart?.description ?? buildConveyorDescription(conveyorInputs) ?? ''
+    // Belt Specifications selections fold into the description regardless of whether it came
+    // from a real priced part or the fallback formula — the price itself is untouched either way.
+    const extraDetails = CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS.map((fieldKey) => {
+      const detailItem = items.find((i) => i.metadata.field_key === fieldKey)
+      if (!detailItem) return null
+      const raw = values[fieldKey]
+      if (raw === null || raw === undefined || raw === '') return null
+      if (typeof raw === 'string' && raw.toLowerCase() === 'no') return null
+      if (!isFieldVisible(rules, values, fieldKey)) return null
+      const label = options.find((o) => o.item_id === detailItem.id && o.option_value === raw)?.option_label ?? String(raw)
+      return `${detailItem.name}: ${label}`
+    }).filter((s): s is string => s !== null)
+    const description = [baseDescription, ...extraDetails].filter(Boolean).join(', ')
     itemRows.push({
       key: 'conveyor_part_number',
       item: conveyorPartNumber,

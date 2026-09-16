@@ -70,6 +70,18 @@ export interface ConveyorPartNumberInputs {
   beltType: string | null // 'standard' | 'hybrid' | null
 }
 
+/** Pulls the part-number inputs out of a quote's flat field_key -> value selections map. */
+export function conveyorInputsFromSelections(values: Record<string, unknown>): ConveyorPartNumberInputs {
+  return {
+    series: (values['conveyor_series'] as string) ?? null,
+    drive: (values['conveyor_drive'] as string) ?? null,
+    horsepower: (values['conveyor_horsepower'] as string) ?? null,
+    lengthFt: (values['conveyor_length'] as number | string) ?? null,
+    steelType: (values['conveyor_steel_type'] as string) ?? null,
+    beltType: (values['conveyor_belt_type'] as string) ?? null,
+  }
+}
+
 function resolveConfig(inputs: Pick<ConveyorPartNumberInputs, 'series' | 'steelType' | 'beltType'>): string | null {
   if (inputs.series !== 'bc_30_inches' || !inputs.steelType || !inputs.beltType) return null
   return CONFIG_CODES_30IN[`${inputs.steelType}|${inputs.beltType}`] ?? null

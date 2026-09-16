@@ -16,13 +16,20 @@ export function selectionsPartsTotal(selections: Record<string, SelectionValue>)
   return total
 }
 
+/**
+ * `conveyorPrice` is the real `parts.unit_price` of the generated belt conveyor part number
+ * (see lib/conveyor/beltPartNumber.ts), or 0 when nothing is generated / nothing priced. It
+ * needs a DB lookup, so callers resolve it (useConveyorPart on the client, conveyorPartPrice in
+ * the save action) and pass it in rather than this function deriving it.
+ */
 export function computeQuoteTotal(
   lineItems: LineItem[],
   selections: Record<string, SelectionValue>,
-  discountPercent: number | null | undefined
+  discountPercent: number | null | undefined,
+  conveyorPrice = 0
 ): number {
   const lineItemsSubtotal = lineItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0)
-  const subtotal = lineItemsSubtotal + selectionsPartsTotal(selections)
+  const subtotal = lineItemsSubtotal + selectionsPartsTotal(selections) + conveyorPrice
   const pct = discountPercent ?? 0
   return Math.max(0, subtotal * (1 - pct / 100))
 }

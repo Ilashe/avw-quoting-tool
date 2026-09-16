@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { SelectionValue } from '@/store/selectionsStore'
 import type { LineItem } from '@/types/parts'
 import { computeQuoteTotal } from '@/lib/pricing'
+import { buildConveyorPartNumber, conveyorInputsFromSelections } from '@/lib/conveyor/beltPartNumber'
 
 export interface QuoteSummary {
   id: string
@@ -95,6 +96,27 @@ export async function getUserQuotes(): Promise<QuoteSummary[]> {
 
 // ── save ──────────────────────────────────────────────────────────────────────
 
+// Server-side twin of useConveyorPart: the persisted total_value must include the generated
+// belt conveyor part's real price, same as the live TopBar/SummaryPanel totals.
+async function conveyorPartPrice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  selections: Record<string, SelectionValue>
+): Promise<number> {
+  const partNumber = buildConveyorPartNumber(conveyorInputsFromSelections(selections))
+  if (!partNumber) return 0
+  const { data } = await supabase.from('parts').select('unit_price').eq('part_number', partNumber).maybeSingle()
+  return (data as { unit_price: number | null } | null)?.unit_price ?? 0
+}
+
+async function quoteTotal(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  selections: Record<string, SelectionValue>,
+  lineItems: LineItem[]
+): Promise<number> {
+  const conveyorPrice = await conveyorPartPrice(supabase, selections)
+  return computeQuoteTotal(lineItems, selections, selections['items_discount_percent'] as number | null, conveyorPrice)
+}
+
 export async function saveQuote(
   quoteId: string,
   selections: Record<string, SelectionValue>,
@@ -102,7 +124,7 @@ export async function saveQuote(
 ): Promise<void> {
   const { supabase } = await authedSupabase()
   const customerName = String(selections['customer'] ?? '')
-  const totalValue = computeQuoteTotal(lineItems, selections, selections['items_discount_percent'] as number | null)
+  const totalValue = await quoteTotal(supabase, selections, lineItems)
   await supabase
     .from('quotes')
     .update({ selections, line_items: lineItems, customer_name: customerName, total_value: totalValue })
@@ -116,7 +138,7 @@ export async function finishQuote(
 ): Promise<void> {
   const { supabase } = await authedSupabase()
   const customerName = String(selections['customer'] ?? '')
-  const totalValue = computeQuoteTotal(lineItems, selections, selections['items_discount_percent'] as number | null)
+  const totalValue = await quoteTotal(supabase, selections, lineItems)
   await supabase
     .from('quotes')
     .update({

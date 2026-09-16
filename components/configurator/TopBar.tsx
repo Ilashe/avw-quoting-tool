@@ -5,6 +5,7 @@ import { useSelectionsStore } from '@/store/selectionsStore'
 import { useLineItemsStore } from '@/store/lineItemsStore'
 import { computeQuoteTotal } from '@/lib/pricing'
 import { formatCurrency } from '@/lib/format'
+import { useConveyorPart } from '@/lib/conveyor/useConveyorPart'
 
 export default function TopBar({
   saving,
@@ -17,7 +18,8 @@ export default function TopBar({
   const customerName = values['customer'] as string | null | undefined
   const discountPercent = values['items_discount_percent'] as number | null
   const lineItems = useLineItemsStore((s) => s.items)
-  const total = computeQuoteTotal(lineItems, values, discountPercent)
+  const { price: conveyorPrice } = useConveyorPart(values)
+  const total = computeQuoteTotal(lineItems, values, discountPercent, conveyorPrice)
 
   return (
     <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">

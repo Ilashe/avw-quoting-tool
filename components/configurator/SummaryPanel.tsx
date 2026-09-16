@@ -8,13 +8,13 @@ import { generalFields } from '@/lib/configurator/generalFields'
 import { isFieldVisible } from '@/lib/rules/engine'
 import { computeQuoteTotal } from '@/lib/pricing'
 import { formatCurrency } from '@/lib/format'
-import { usePartsByNumbers } from '@/lib/catalog/usePartsByNumbers'
 import {
-  buildConveyorPartNumber,
   buildConveyorDescription,
+  conveyorInputsFromSelections,
   CONVEYOR_PART_NUMBER_FIELD_KEYS,
   CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS,
 } from '@/lib/conveyor/beltPartNumber'
+import { useConveyorPart } from '@/lib/conveyor/useConveyorPart'
 import type { SelectedPart } from '@/types/parts'
 
 const CONVEYOR_PART_NUMBER_FIELDS = new Set<string>(CONVEYOR_PART_NUMBER_FIELD_KEYS)
@@ -38,7 +38,8 @@ export default function SummaryPanel() {
   const values = useSelectionsStore((s) => s.values)
   const lineItems = useLineItemsStore((s) => s.items)
   const discountPercent = values['items_discount_percent'] as number | null
-  const total = computeQuoteTotal(lineItems, values, discountPercent)
+  const { partNumber: conveyorPartNumber, realPart: conveyorRealPart, price: conveyorPrice } = useConveyorPart(values)
+  const total = computeQuoteTotal(lineItems, values, discountPercent, conveyorPrice)
   // null = all tabs; single fetch covers equipment, backroom, fixtures_signs, etc.
   const { items, options, rules } = useEquipmentCatalog(null)
 
@@ -130,23 +131,13 @@ export default function SummaryPanel() {
     itemRows.push({ key: field_key, item: item.name, description, quantity: null, unitPrice: null, price: 0 })
   }
 
-  const conveyorInputs = {
-    series: (values['conveyor_series'] as string) ?? null,
-    drive: (values['conveyor_drive'] as string) ?? null,
-    horsepower: (values['conveyor_horsepower'] as string) ?? null,
-    lengthFt: (values['conveyor_length'] as number | string) ?? null,
-    steelType: (values['conveyor_steel_type'] as string) ?? null,
-    beltType: (values['conveyor_belt_type'] as string) ?? null,
-  }
-  const conveyorPartNumber = buildConveyorPartNumber(conveyorInputs)
   // Real pricing/description from the client's Items export (imported into `parts`) always wins
   // when the exact generated part number has been priced; buildConveyorDescription's formula is
   // only a fallback for combinations with no real match yet (price stays $0 in that case, same
   // "no data = no guessed price" convention used everywhere else in this app).
-  const { parts: conveyorPartLookup } = usePartsByNumbers(conveyorPartNumber ? [conveyorPartNumber] : [])
   if (conveyorPartNumber) {
-    const realPart = conveyorPartLookup.find((p) => p.part_number === conveyorPartNumber)
-    const baseDescription = realPart?.description ?? buildConveyorDescription(conveyorInputs) ?? ''
+    const baseDescription =
+      conveyorRealPart?.description ?? buildConveyorDescription(conveyorInputsFromSelections(values)) ?? ''
     // Belt Specifications selections fold into the description regardless of whether it came
     // from a real priced part or the fallback formula — the price itself is untouched either way.
     const extraDetails = CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS.map((fieldKey) => {
@@ -165,8 +156,8 @@ export default function SummaryPanel() {
       item: conveyorPartNumber,
       description,
       quantity: 1,
-      unitPrice: realPart?.unit_price ?? 0,
-      price: realPart?.unit_price ?? 0,
+      unitPrice: conveyorPrice,
+      price: conveyorPrice,
     })
   }
 

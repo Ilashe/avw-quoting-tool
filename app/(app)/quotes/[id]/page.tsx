@@ -26,11 +26,9 @@ export default async function QuoteConfiguratorPage({
     redirect(`/quotes/${data.id}`)
   }
 
-  const { data: quote, error } = await supabase
-    .from('quotes')
-    .select('id, customer_name, selections, line_items, status')
-    .eq('id', id)
-    .single()
+  // select('*') rather than a column list so the page still renders on a database where
+  // migration 0069 (quotes.quote_number) hasn't been applied yet — quoteNumber falls back below.
+  const { data: quote, error } = await supabase.from('quotes').select('*').eq('id', id).single()
 
   if (error || !quote) redirect('/quotes')
 
@@ -38,9 +36,17 @@ export default async function QuoteConfiguratorPage({
     <ConfiguratorShell
       key={quote.id}
       quoteId={quote.id}
+      quoteNumber={formatQuoteNumber(quote.quote_number, quote.id)}
       initialSelections={(quote.selections ?? {}) as Record<string, SelectionValue>}
       initialLineItems={(quote.line_items ?? []) as LineItem[]}
       initialStatus={(quote.status as string) ?? 'draft'}
     />
   )
+}
+
+/** The sequential number from migration 0069, or a stable id-derived stand-in without it. */
+function formatQuoteNumber(quoteNumber: unknown, quoteId: string): string {
+  if (typeof quoteNumber === 'number') return String(quoteNumber)
+  const hex = quoteId.replace(/-/g, '').slice(-6)
+  return String(100000 + (parseInt(hex, 16) % 900000))
 }

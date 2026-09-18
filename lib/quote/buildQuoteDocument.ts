@@ -1,0 +1,245 @@
+import type { SelectionValue } from '@/store/selectionsStore'
+import type { EquipmentItem, EquipmentOption, DependencyRule } from '@/types/equipment'
+import type { LineItem, PartWithImage, SelectedPart } from '@/types/parts'
+import { generalFields } from '@/lib/configurator/generalFields'
+import { isFieldVisible } from '@/lib/rules/engine'
+import { computeQuoteTotal } from '@/lib/pricing'
+import {
+  buildConveyorDescription,
+  conveyorInputsFromSelections,
+  CONVEYOR_PART_NUMBER_FIELD_KEYS,
+  CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS,
+} from '@/lib/conveyor/beltPartNumber'
+import { VACUUM_QUOTE_ITEMS_FIELD } from '@/lib/vacuum/vacuumQuote'
+import { QUOTE_COMMENT_FIELD } from '@/lib/configurator/commentFields'
+
+const CONVEYOR_PART_NUMBER_FIELDS = new Set<string>(CONVEYOR_PART_NUMBER_FIELD_KEYS)
+
+/** Rate printed on the generated quote, matching the client's existing quote forms. */
+export const SALES_TAX_RATE = 0.06
+
+export interface QuoteHeaderRow {
+  key: string
+  label: string
+  value: string
+}
+
+export interface QuoteItemRow {
+  key: string
+  item: string
+  description: string
+  quantity: number | null
+  unitPrice: number | null
+  price: number
+}
+
+export interface QuoteDocument {
+  customerName: string
+  /** Free-text "Ship to Address" split into lines for the quote form's Ship To box. */
+  shipToLines: string[]
+  headerRows: QuoteHeaderRow[]
+  itemRows: QuoteItemRow[]
+  /** Committed Comment-tab text (empty until the user clicks Next on that tab). */
+  comment: string
+  discountPercent: number | null
+  /** Post-discount subtotal — the same figure TopBar shows and quotes.total_value stores. */
+  subtotal: number
+  salesTax: number
+  total: number
+}
+
+export interface QuoteDocumentInput {
+  values: Record<string, SelectionValue>
+  lineItems: LineItem[]
+  items: EquipmentItem[]
+  options: EquipmentOption[]
+  rules: DependencyRule[]
+  conveyorPartNumber: string | null
+  conveyorRealPart: PartWithImage | null
+  conveyorPrice: number
+}
+
+/**
+ * Single source of truth for "what is on this quote": the live Quote Summary panel, the Review
+ * page and the generated PDF all render this, so the three can never drift apart. Lifted out of
+ * SummaryPanel (where it grew) when Review and PDF export needed the same rows.
+ */
+export function buildQuoteDocument({
+  values,
+  lineItems,
+  items,
+  options,
+  rules,
+  conveyorPartNumber,
+  conveyorRealPart,
+  conveyorPrice,
+}: QuoteDocumentInput): QuoteDocument {
+  // General tab fields (Customer, Ship to Address, drive type, voltages, liftgate) are
+  // quote-header attributes, not priced items — shown as a header block, not the item table.
+  const headerRows: QuoteHeaderRow[] = []
+  let customerName = ''
+  let shipToAddress = ''
+
+  for (const field of generalFields) {
+    const raw = values[field.key]
+    if (raw === null || raw === undefined || raw === '') continue
+    if (typeof raw === 'string' && raw.toLowerCase() === 'no') continue
+    const displayValue =
+      field.widget === 'text' || field.widget === 'address_autocomplete'
+        ? String(raw)
+        : (field.options?.find((o) => o.value === raw)?.label ?? String(raw))
+    if (field.key === 'customer') {
+      customerName = displayValue
+      continue
+    }
+    if (field.key === 'ship_to_address') shipToAddress = displayValue
+    headerRows.push({ key: field.key, label: field.label, value: displayValue })
+  }
+
+  // Trigger fields (e.g. "Sidewashers" Yes/No) that gate a multi_part_picker are never shown
+  // as their own row — Yes/No is just a gate, not a priced selection. Whether the answer is
+  // Yes or No, and whether the picker has any selections yet, the summary stays silent for
+  // this field; only the actual picked parts ever appear (added below when the picker field
+  // itself is processed).
+  const suppressedTriggerFields = new Set<string>()
+  for (const rule of rules) {
+    if (rule.action_type !== 'show') continue
+    const targetItem = items.find((i) => i.metadata.field_key === rule.target_field)
+    if (targetItem?.metadata.widget !== 'multi_part_picker') continue
+    suppressedTriggerFields.add(rule.trigger_field)
+  }
+
+  const itemRows: QuoteItemRow[] = []
+
+  for (const item of items) {
+    const { field_key, widget, unit } = item.metadata
+    const raw = values[field_key]
+    if (raw === null || raw === undefined || raw === '') continue
+    if (typeof raw === 'string' && raw.toLowerCase() === 'no') continue
+    if (widget === 'pending') continue
+    if (!isFieldVisible(rules, values, field_key)) continue
+    if (suppressedTriggerFields.has(field_key)) continue
+    // Series/Drive/Config/Horsepower/Length/Type-of-Steel never show as their own rows — they
+    // only ever appear combined into the single generated "Belt Part Number" row below.
+    if (CONVEYOR_PART_NUMBER_FIELDS.has(field_key)) continue
+
+    // Robot Arch (and any future multi_part_picker field): show each picked part's own
+    // detail row instead of a generic "Yes". The same part can be selectable under more
+    // than one picker (e.g. also under Applicator Arches), so the Item column shows the
+    // trigger field's name (e.g. "Robot Arch") rather than the bare part number, to make
+    // clear which selection each row came from; the part number/description move into
+    // the Description column.
+    if (widget === 'multi_part_picker') {
+      const rule = rules.find((r) => r.action_type === 'show' && r.target_field === field_key)
+      const triggerItem = rule ? items.find((i) => i.metadata.field_key === rule.trigger_field) : null
+      const groupLabel = triggerItem?.name ?? item.name
+      // Index in the key (not just part_number) because two different trigger parts in the
+      // same picker can bundle the same required part (e.g. CB0405 and CB0405-EL both pull in
+      // CB0405AMC-23-13 as a core item) — those are legitimately separate rows, one set of
+      // cores per unit, not a single merged quantity.
+      ;(raw as SelectedPart[]).forEach((part, i) => {
+        const quantity = part.quantity ?? 1
+        itemRows.push({
+          key: `${field_key}:${i}:${part.part_number}`,
+          item: part.choice_label ? `${groupLabel} — ${part.choice_label}` : groupLabel,
+          description: `${part.part_number} — ${part.description}`,
+          quantity,
+          unitPrice: part.unit_price,
+          price: part.unit_price * quantity,
+        })
+      })
+      continue
+    }
+
+    let description: string
+    if (widget === 'number' || widget === 'combobox_range') {
+      description = raw === 'none' ? 'None' : `${raw}${unit ? ' ' + unit : ''}`
+    } else if (widget === 'select_range') {
+      description = `${raw}${unit ? ' ' + unit : ''}`
+    } else {
+      description =
+        options.find((o) => o.item_id === item.id && o.option_value === raw)?.option_label ?? String(raw)
+    }
+
+    itemRows.push({ key: field_key, item: item.name, description, quantity: null, unitPrice: null, price: 0 })
+  }
+
+  // Real pricing/description from the client's Items export (imported into `parts`) always wins
+  // when the exact generated part number has been priced; buildConveyorDescription's formula is
+  // only a fallback for combinations with no real match yet (price stays $0 in that case, same
+  // "no data = no guessed price" convention used everywhere else in this app).
+  if (conveyorPartNumber) {
+    const baseDescription =
+      conveyorRealPart?.description ?? buildConveyorDescription(conveyorInputsFromSelections(values)) ?? ''
+    // Belt Specifications selections fold into the description regardless of whether it came
+    // from a real priced part or the fallback formula — the price itself is untouched either way.
+    const extraDetails = CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS.map((fieldKey) => {
+      const detailItem = items.find((i) => i.metadata.field_key === fieldKey)
+      if (!detailItem) return null
+      const raw = values[fieldKey]
+      if (raw === null || raw === undefined || raw === '') return null
+      if (typeof raw === 'string' && raw.toLowerCase() === 'no') return null
+      if (!isFieldVisible(rules, values, fieldKey)) return null
+      const label =
+        options.find((o) => o.item_id === detailItem.id && o.option_value === raw)?.option_label ?? String(raw)
+      return `${detailItem.name}: ${label}`
+    }).filter((s): s is string => s !== null)
+    const description = [baseDescription, ...extraDetails].filter(Boolean).join(', ')
+    itemRows.push({
+      key: 'conveyor_part_number',
+      item: conveyorPartNumber,
+      description,
+      quantity: 1,
+      unitPrice: conveyorPrice,
+      price: conveyorPrice,
+    })
+  }
+
+  // Vacuum system rows, committed by the Next button on the Vacuum tab. They are stored as
+  // SelectedPart[] so computeQuoteTotal's selectionsPartsTotal already counts them in the total.
+  const vacuumItems = values[VACUUM_QUOTE_ITEMS_FIELD]
+  if (Array.isArray(vacuumItems)) {
+    ;(vacuumItems as SelectedPart[]).forEach((part, i) => {
+      const quantity = part.quantity ?? 1
+      itemRows.push({
+        key: `vacuum:${i}:${part.part_number}`,
+        item: part.part_number,
+        description: part.description,
+        quantity,
+        unitPrice: part.unit_price,
+        price: part.unit_price * quantity,
+      })
+    })
+  }
+
+  for (const line of lineItems) {
+    itemRows.push({
+      key: line.id,
+      item: line.part_number ?? 'Custom',
+      description: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unit_price,
+      price: line.unit_price * line.quantity,
+    })
+  }
+
+  const discountPercent = (values['items_discount_percent'] as number | null) ?? null
+  const subtotal = computeQuoteTotal(lineItems, values, discountPercent, conveyorPrice)
+  const salesTax = subtotal * SALES_TAX_RATE
+  const comment = typeof values[QUOTE_COMMENT_FIELD] === 'string' ? (values[QUOTE_COMMENT_FIELD] as string) : ''
+
+  return {
+    customerName,
+    shipToLines: shipToAddress
+      .split(/\s*,\s*|\n/)
+      .map((s) => s.trim())
+      .filter(Boolean),
+    headerRows,
+    itemRows,
+    comment,
+    discountPercent,
+    subtotal,
+    salesTax,
+    total: subtotal + salesTax,
+  }
+}

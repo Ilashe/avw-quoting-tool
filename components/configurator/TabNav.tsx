@@ -1,14 +1,14 @@
 'use client'
 
-import { TAB_LABELS, TAB_ORDER, useConfiguratorStore } from '@/store/configuratorStore'
+import { TAB_LABELS, useConfiguratorStore, type TabKey } from '@/store/configuratorStore'
 
-export default function TabNav() {
+export default function TabNav({ order }: { order: TabKey[] }) {
   const activeTab = useConfiguratorStore((s) => s.activeTab)
   const setActiveTab = useConfiguratorStore((s) => s.setActiveTab)
 
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-6">
-      {TAB_ORDER.map((tab) => {
+      {order.map((tab) => {
         const isActive = tab === activeTab
         return (
           <button

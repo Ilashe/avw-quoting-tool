@@ -33,4 +33,16 @@ export const generalFields: GeneralFieldDef[] = [
       { value: 'hydraulic_drive', label: 'Hydraulic Drive' },
     ],
   },
+  // Gates the whole Vacuum tab: Yes adds it to the nav, No (or unanswered) removes it —
+  // see getTabOrder in store/configuratorStore.ts.
+  {
+    key: 'purchasing_vacuum',
+    label: 'Purchasing Vacuum',
+    widget: 'radio',
+    required: true,
+    options: [
+      { value: 'yes', label: 'Yes' },
+      { value: 'no', label: 'No' },
+    ],
+  },
 ]

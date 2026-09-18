@@ -1,6 +1,12 @@
 "use client";
 import React, { useState } from 'react';
 import { Calculator, Download, Trash2, Plus, X, Info } from 'lucide-react';
+import { useSelectionsStore } from '@/store/selectionsStore';
+import {
+  VACUUM_CONFIG_FIELD,
+  VACUUM_QUOTE_ITEMS_FIELD,
+  VACUUM_STATS_FIELD,
+} from '@/lib/vacuum/vacuumQuote';
 
 // Complete price data
 const priceData = {
@@ -289,12 +295,65 @@ const priceData = {
   }
 };
 
-const VacuumQuoteCalculator = () => {
-  const [rows, setRows] = useState([{ id: 1, spots: 5 }]);
-  const [centralUnits, setCentralUnits] = useState([{ id: 1, unit: '', quantity: 1 }]);
-  const [siteVoltage, setSiteVoltage] = useState('230/460');
-  const [toolPreference, setToolPreference] = useState('half');
-  const [quote, setQuote] = useState(null);
+// This calculator is the standalone vacuum-calculator app embedded verbatim (its pricing and
+// logic are its own, not Supabase-driven like the rest of the tool). The only grafts onto it are
+// at the edges: its inputs and its generated quote round-trip through selectionsStore so the
+// quote survives a reload, and its button is now a Next that commits the result to the shared
+// quote instead of a Generate Quote that only filled the panel below.
+const readStoredJson = (raw) => {
+  if (typeof raw !== 'string' || raw === '') return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+const VacuumQuoteCalculator = ({ onNext }) => {
+  const setField = useSelectionsStore((s) => s.setField);
+  // Read once, at mount, straight from the store: these seed local state, and letting them
+  // re-render the tab on every keystroke would fight the local state that owns them.
+  const [storedConfig] = useState(() => readStoredJson(useSelectionsStore.getState().values[VACUUM_CONFIG_FIELD]));
+  const [storedQuote] = useState(() => {
+    const values = useSelectionsStore.getState().values;
+    const items = values[VACUUM_QUOTE_ITEMS_FIELD];
+    const stats = readStoredJson(values[VACUUM_STATS_FIELD]);
+    if (!Array.isArray(items) || items.length === 0 || !stats) return null;
+    return {
+      config: stats,
+      lineItems: items.map((part) => ({
+        partNumber: part.part_number,
+        description: part.description,
+        qty: part.quantity ?? 1,
+        unitPrice: part.unit_price,
+        total: part.unit_price * (part.quantity ?? 1),
+      })),
+      subtotal: items.reduce((sum, part) => sum + part.unit_price * (part.quantity ?? 1), 0),
+    };
+  });
+
+  const [rows, setRows] = useState(storedConfig?.rows ?? [{ id: 1, spots: 5 }]);
+  const [centralUnits, setCentralUnits] = useState(storedConfig?.centralUnits ?? [{ id: 1, unit: '', quantity: 1 }]);
+  const [siteVoltage, setSiteVoltage] = useState(storedConfig?.siteVoltage ?? '230/460');
+  const [toolPreference, setToolPreference] = useState(storedConfig?.toolPreference ?? 'half');
+  const [quote, setQuote] = useState(storedQuote);
+
+  // Writes the generated quote into the shared selections: the line items as SelectedPart[] (so
+  // lib/pricing.ts totals them automatically), the stats and the raw inputs as JSON strings.
+  const commitQuote = (generated) => {
+    setField(
+      VACUUM_QUOTE_ITEMS_FIELD,
+      generated.lineItems.map((item) => ({
+        part_number: item.partNumber,
+        description: item.description,
+        unit_price: item.unitPrice,
+        image_url: null,
+        quantity: item.qty,
+      }))
+    );
+    setField(VACUUM_STATS_FIELD, JSON.stringify(generated.config));
+    setField(VACUUM_CONFIG_FIELD, JSON.stringify({ rows, centralUnits, siteVoltage, toolPreference }));
+  };
 
   // Calculate total arches across all rows
   const calculateTotalArches = () => {
@@ -680,7 +739,7 @@ const VacuumQuoteCalculator = () => {
 
     const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0);
 
-    setQuote({
+    const generated = {
       config: {
         rows: rows.length,
         totalArches: totalArches,
@@ -694,7 +753,22 @@ const VacuumQuoteCalculator = () => {
       },
       lineItems,
       subtotal
-    });
+    };
+
+    setQuote(generated);
+    // Returned (rather than only stashed in local state) so handleNext can commit the very same
+    // figures to the quote — setQuote's update isn't readable within this tick.
+    return generated;
+  };
+
+  // The tab's Next button: generate the vacuum quote, push its line items into the shared
+  // quote (where they show up in the Quote Summary and roll into the total), then move on.
+  // Validation failures inside calculateQuote return undefined and keep the user on this tab.
+  const handleNext = () => {
+    const generated = calculateQuote();
+    if (!generated) return;
+    commitQuote(generated);
+    if (onNext) onNext();
   };
 
   const exportQuote = () => {
@@ -720,11 +794,15 @@ const VacuumQuoteCalculator = () => {
     const updatedLineItems = quote.lineItems.filter((_, i) => i !== index);
     const newSubtotal = updatedLineItems.reduce((sum, item) => sum + item.total, 0);
 
-    setQuote({
+    const updated = {
       ...quote,
       lineItems: updatedLineItems,
       subtotal: newSubtotal
-    });
+    };
+    setQuote(updated);
+    // The row is already on the shared quote, so dropping it here has to drop it there too —
+    // otherwise the Quote Summary and the total would keep charging for a deleted item.
+    commitQuote(updated);
   };
 
   return (
@@ -933,13 +1011,13 @@ const VacuumQuoteCalculator = () => {
             </div>
           </div>
 
-          {/* Generate Button */}
+          {/* Next: generates the vacuum quote, adds it to the Quote Summary, advances a tab */}
           <button
-            onClick={calculateQuote}
+            onClick={handleNext}
             className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-3 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow-md"
           >
             <Calculator className="w-5 h-5" />
-            Generate Quote
+            Next
           </button>
         </div>
 

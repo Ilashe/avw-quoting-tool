@@ -1,24 +1,23 @@
 'use client'
 
-import { FileDown } from 'lucide-react'
-import { TAB_LABELS, useConfiguratorStore, type TabKey } from '@/store/configuratorStore'
+import { REVIEW_LABEL, TAB_LABELS, useConfiguratorStore, type TabKey } from '@/store/configuratorStore'
 
 interface FooterNavProps {
   /** Tabs actually in the flow right now — Vacuum drops out unless it's being purchased. */
   order: TabKey[]
-  onGenerate: () => void
-  isComplete: boolean
-  generating?: boolean
+  /** Last tab's forward button: leaves the configurator for the standalone Review page. */
+  onReview: () => void
+  reviewing?: boolean
 }
 
-export default function FooterNav({ order, onGenerate, isComplete, generating = false }: FooterNavProps) {
+export default function FooterNav({ order, onReview, reviewing = false }: FooterNavProps) {
   const activeTab = useConfiguratorStore((s) => s.activeTab)
   const goBack = useConfiguratorStore((s) => s.goBack)
   const goNext = useConfiguratorStore((s) => s.goNext)
 
   const index = order.indexOf(activeTab)
   const isFirst = index === 0
-  // Review is the last tab: its forward button generates the PDF instead of advancing.
+  // On the last tab the forward button opens the Review page instead of advancing a tab.
   const isLast = index === order.length - 1
   const nextLabel = isLast ? null : TAB_LABELS[order[index + 1]]
 
@@ -36,22 +35,17 @@ export default function FooterNav({ order, onGenerate, isComplete, generating = 
       {isLast ? (
         <button
           type="button"
-          onClick={onGenerate}
-          disabled={generating}
-          className={`flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-semibold text-white transition disabled:opacity-60 ${
-            isComplete ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-brand hover:bg-ink'
-          }`}
+          onClick={onReview}
+          disabled={reviewing}
+          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-ink disabled:opacity-60"
         >
-          {generating ? (
+          {reviewing ? (
             <>
               <span className="size-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              Generating…
+              Opening…
             </>
           ) : (
-            <>
-              <FileDown className="size-4" />
-              Generate Quote
-            </>
+            <>Next → {REVIEW_LABEL}</>
           )}
         </button>
       ) : (

@@ -1,23 +1,16 @@
 'use client'
 
 import { useSelectionsStore } from '@/store/selectionsStore'
-import { QUOTE_COMMENT_DRAFT_FIELD, QUOTE_COMMENT_FIELD } from '@/lib/configurator/commentFields'
+import { QUOTE_COMMENT_DRAFT_FIELD } from '@/lib/configurator/commentFields'
 
+/**
+ * `onNext` is the shell's handleReview: it publishes this note to the quote (draft -> committed
+ * comment), saves, and opens the standalone Review page.
+ */
 export default function CommentTab({ onNext }: { onNext: () => void }) {
   const setField = useSelectionsStore((s) => s.setField)
   const draft = useSelectionsStore((s) => s.values[QUOTE_COMMENT_DRAFT_FIELD])
-  const committed = useSelectionsStore((s) => s.values[QUOTE_COMMENT_FIELD])
-
   const draftText = typeof draft === 'string' ? draft : ''
-  const committedText = typeof committed === 'string' ? committed : ''
-  const isCommitted = committedText !== '' && committedText === draftText
-
-  // Next both publishes the note to the Quote Summary and moves on to Review, so an empty
-  // comment must also clear a previously published one rather than leaving a stale note behind.
-  const handleNext = () => {
-    setField(QUOTE_COMMENT_FIELD, draftText.trim() === '' ? null : draftText)
-    onNext()
-  }
 
   return (
     <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
@@ -26,7 +19,7 @@ export default function CommentTab({ onNext }: { onNext: () => void }) {
           Comment
         </label>
         <p className="mt-0.5 text-[11px] text-slate-400">
-          Appears on the Quote Summary, the Review page and the generated quote.
+          Appears on the Review page and the generated quote.
         </p>
         <textarea
           id="quote-comment"
@@ -38,18 +31,13 @@ export default function CommentTab({ onNext }: { onNext: () => void }) {
         />
       </div>
 
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={handleNext}
-          className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white transition hover:bg-ink"
-        >
-          Next → Review
-        </button>
-        {isCommitted && (
-          <span className="text-xs text-green-600">✓ Added to the quote summary</span>
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={onNext}
+        className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white transition hover:bg-ink"
+      >
+        Next → Review
+      </button>
     </div>
   )
 }

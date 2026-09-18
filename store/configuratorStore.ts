@@ -22,7 +22,6 @@ export const ALL_TABS = [
   'pos',
   'controller',
   'comment',
-  'review',
 ] as const
 
 export type TabKey = (typeof ALL_TABS)[number] | 'items'
@@ -41,9 +40,11 @@ export const TAB_LABELS: Record<TabKey, string> = {
   pos: 'POS',
   controller: 'MCC-Controller',
   comment: 'Comment',
-  review: 'Review',
   items: 'Items',
 }
+
+/** Label of the page the last tab leads to. Review is a route (/quotes/[id]/review), not a tab. */
+export const REVIEW_LABEL = 'Review'
 
 /** General-tab field gating the Vacuum tab. */
 export const PURCHASING_VACUUM_FIELD = 'purchasing_vacuum'

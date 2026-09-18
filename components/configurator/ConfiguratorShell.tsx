@@ -4,16 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   getTabOrder,
+  type TabKey,
   useConfiguratorStore,
   PURCHASING_VACUUM_FIELD,
 } from '@/store/configuratorStore'
 import { useSelectionsStore, type SelectionValue } from '@/store/selectionsStore'
 import { useLineItemsStore } from '@/store/lineItemsStore'
-import { saveQuote, createNewQuote, finishQuote, revertToDraft } from '@/lib/actions/quotes'
+import { saveQuote, createNewQuote, revertToDraft } from '@/lib/actions/quotes'
 import { useClearHiddenFields } from '@/lib/rules/useClearHiddenFields'
 import { useApplyForcedValues } from '@/lib/rules/useApplyForcedValues'
-import { useQuoteDocument } from '@/lib/quote/useQuoteDocument'
-import { generateQuotePdf } from '@/lib/pdf/quotePdf'
+import { QUOTE_COMMENT_DRAFT_FIELD, QUOTE_COMMENT_FIELD } from '@/lib/configurator/commentFields'
 import {
   VACUUM_CONFIG_FIELD,
   VACUUM_QUOTE_ITEMS_FIELD,
@@ -35,17 +35,17 @@ import PosTab from './tabs/PosTab'
 import ControllerTab from './tabs/ControllerTab'
 import ItemsTab from './tabs/ItemsTab'
 import CommentTab from './tabs/CommentTab'
-import ReviewTab from './tabs/ReviewTab'
 
 export default function ConfiguratorShell({
   quoteId,
-  quoteNumber,
+  initialTab,
   initialSelections,
   initialLineItems,
   initialStatus,
 }: {
   quoteId: string
-  quoteNumber: string
+  /** Tab to open on — set when returning from the Review page's Back button. */
+  initialTab?: TabKey
   initialSelections: Record<string, SelectionValue>
   initialLineItems: LineItem[]
   initialStatus: string
@@ -68,11 +68,9 @@ export default function ConfiguratorShell({
   const purchasingVacuum = values[PURCHASING_VACUUM_FIELD]
   const tabOrder = useMemo(() => getTabOrder(values), [purchasingVacuum]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const quoteDocument = useQuoteDocument()
-
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState(initialStatus)
-  const [generating, setGenerating] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Always holds the latest values without making them a useEffect dependency
   const latestValuesRef = useRef(values)
@@ -84,7 +82,7 @@ export default function ConfiguratorShell({
   statusRef.current = status
   // Skip auto-save that fires immediately after store hydration
   const skipNextSave = useRef(true)
-  // Set true when handleNewQuote/handleGenerate has already flushed; prevents unmount
+  // Set true when handleNewQuote/handleReview has already flushed; prevents unmount
   // cleanup from overwriting the saved quote with {} after resetSelections() runs.
   const explicitlySaved = useRef(false)
 
@@ -94,6 +92,7 @@ export default function ConfiguratorShell({
     explicitlySaved.current = false
     setStatus(initialStatus)
     resetConfigurator()
+    if (initialTab) setActiveTab(initialTab)
     initSelections(initialSelections)
     initLineItems(initialLineItems)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,22 +147,27 @@ export default function ConfiguratorShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
 
-  // Review's forward button: produce the PDF on AVW's quote form, then save + mark complete.
-  // The quote deliberately stays open afterwards so the user can tweak and re-generate.
-  const handleGenerate = useCallback(async () => {
-    setGenerating(true)
+  // Last tab's Next: publish the Comment tab's note to the quote, flush the save, then leave for
+  // the standalone Review page. The save is awaited (not left to the 2 s autosave) because the
+  // Review page loads the quote from the database — navigating first would show stale data.
+  const handleReview = useCallback(async () => {
+    setReviewing(true)
     try {
-      await generateQuotePdf(quoteDocument, { quoteNumber })
+      const store = useSelectionsStore.getState()
+      const draft = store.values[QUOTE_COMMENT_DRAFT_FIELD]
+      const text = typeof draft === 'string' ? draft : ''
+      store.setField(QUOTE_COMMENT_FIELD, text.trim() === '' ? null : text)
+
       explicitlySaved.current = true
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      await finishQuote(quoteId, latestValuesRef.current, latestLineItemsRef.current)
+      await saveQuote(quoteId, useSelectionsStore.getState().values, latestLineItemsRef.current)
+      router.push(`/quotes/${quoteId}/review`)
+    } catch (err) {
       explicitlySaved.current = false
-      setStatus('complete')
-      setSaving(false)
-    } finally {
-      setGenerating(false)
+      setReviewing(false)
+      throw err
     }
-  }, [quoteDocument, quoteId, quoteNumber])
+  }, [quoteId, router])
 
   const handleNewQuote = useCallback(async () => {
     explicitlySaved.current = true
@@ -199,9 +203,7 @@ export default function ConfiguratorShell({
       case 'controller':
         return <ControllerTab />
       case 'comment':
-        return <CommentTab onNext={advance} />
-      case 'review':
-        return <ReviewTab />
+        return <CommentTab onNext={handleReview} />
       case 'items':
         return <ItemsTab />
     }
@@ -217,9 +219,8 @@ export default function ConfiguratorShell({
       </div>
       <FooterNav
         order={tabOrder}
-        onGenerate={handleGenerate}
-        isComplete={status === 'complete'}
-        generating={generating}
+        onReview={handleReview}
+        reviewing={reviewing}
       />
     </div>
   )

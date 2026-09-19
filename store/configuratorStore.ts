@@ -14,7 +14,6 @@ import type { SelectionValue } from './selectionsStore'
 export const ALL_TABS = [
   'general',
   'equipment',
-  'layout',
   'backroom',
   'vacuum',
   'fixtures_signs',
@@ -32,7 +31,6 @@ export const HIDDEN_TABS: readonly TabKey[] = ['items']
 export const TAB_LABELS: Record<TabKey, string> = {
   general: 'General',
   equipment: 'Equipment',
-  layout: 'Layout',
   backroom: 'Backroom',
   vacuum: 'Vacuum',
   fixtures_signs: 'Fixtures & Signs',

@@ -26,7 +26,6 @@ import SummaryPanel from './SummaryPanel'
 import FooterNav from './FooterNav'
 import GeneralTab from './tabs/GeneralTab'
 import EquipmentTab from './tabs/EquipmentTab'
-import LayoutTab from './tabs/LayoutTab'
 import BackroomTab from './tabs/BackroomTab'
 import VacuumTab from './tabs/VacuumTab'
 import FixturesSignsTab from './tabs/FixturesSignsTab'
@@ -188,8 +187,6 @@ export default function ConfiguratorShell({
         return <GeneralTab />
       case 'equipment':
         return <EquipmentTab />
-      case 'layout':
-        return <LayoutTab />
       case 'backroom':
         return <BackroomTab />
       case 'vacuum':

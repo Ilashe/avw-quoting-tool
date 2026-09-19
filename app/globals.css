@@ -32,3 +32,17 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+/* Indeterminate progress bar used by the Review page loading screen. */
+@keyframes review-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+.review-progress-bar {
+  animation: review-progress 1.4s ease-in-out infinite;
+}

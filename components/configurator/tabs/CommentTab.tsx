@@ -7,7 +7,7 @@ import { QUOTE_COMMENT_DRAFT_FIELD } from '@/lib/configurator/commentFields'
  * `onNext` is the shell's handleReview: it publishes this note to the quote (draft -> committed
  * comment), saves, and opens the standalone Review page.
  */
-export default function CommentTab({ onNext }: { onNext: () => void }) {
+export default function CommentTab({ onNext, reviewing = false }: { onNext: () => void; reviewing?: boolean }) {
   const setField = useSelectionsStore((s) => s.setField)
   const draft = useSelectionsStore((s) => s.values[QUOTE_COMMENT_DRAFT_FIELD])
   const draftText = typeof draft === 'string' ? draft : ''
@@ -34,9 +34,17 @@ export default function CommentTab({ onNext }: { onNext: () => void }) {
       <button
         type="button"
         onClick={onNext}
-        className="rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white transition hover:bg-ink"
+        disabled={reviewing}
+        className="flex items-center gap-2 rounded-lg bg-brand px-5 py-2 text-sm font-semibold text-white transition hover:bg-ink disabled:opacity-60"
       >
-        Next → Review
+        {reviewing ? (
+          <>
+            <span className="size-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            Opening…
+          </>
+        ) : (
+          <>Next → Review</>
+        )}
       </button>
     </div>
   )

@@ -6,7 +6,10 @@ import { useRouter } from 'next/navigation'
 import { FileDown } from 'lucide-react'
 import { useSelectionsStore, type SelectionValue } from '@/store/selectionsStore'
 import { useLineItemsStore } from '@/store/lineItemsStore'
+import { useConfiguratorStore } from '@/store/configuratorStore'
 import { finishQuote } from '@/lib/actions/quotes'
+import { createClient } from '@/lib/supabase/client'
+import { formatQuoteNumber } from '@/lib/quote/quoteNumber'
 import { formatCurrency } from '@/lib/format'
 import { useQuoteDocument } from '@/lib/quote/useQuoteDocument'
 import { SALES_TAX_RATE } from '@/lib/quote/buildQuoteDocument'
@@ -20,31 +23,46 @@ import type { LineItem } from '@/types/parts'
  * full-width, unabbreviated (the rail truncates names and clamps descriptions to two lines).
  * Its forward button, Generate Quote, produces the PDF on AVW's quote form.
  */
-export default function QuoteReview({
-  quoteId,
-  quoteNumber,
-  initialSelections,
-  initialLineItems,
-}: {
-  quoteId: string
-  quoteNumber: string
-  initialSelections: Record<string, SelectionValue>
-  initialLineItems: LineItem[]
-}) {
+export default function QuoteReview({ quoteId }: { quoteId: string }) {
   const router = useRouter()
   const initSelections = useSelectionsStore((s) => s.init)
   const initLineItems = useLineItemsStore((s) => s.init)
   const values = useSelectionsStore((s) => s.values)
   const lineItems = useLineItemsStore((s) => s.items)
+  const setResumeQuoteId = useConfiguratorStore((s) => s.setResumeQuoteId)
 
-  // Hydrate from the database copy the configurator saved just before navigating here, so a
-  // refresh or a direct link shows the same thing as arriving via Next.
+  // Arriving from the configurator, the stores already hold this quote — render from memory at
+  // once (no waiting on the database, no server round trip). Only a refresh or a direct link
+  // finds them empty, and then the quote is loaded from the database instead.
   const [ready, setReady] = useState(false)
+  const [quoteNumber, setQuoteNumber] = useState(() => formatQuoteNumber(null, quoteId))
   useEffect(() => {
-    initSelections(initialSelections)
-    initLineItems(initialLineItems)
+    let cancelled = false
+    const inMemory = useSelectionsStore.getState().loadedQuoteId === quoteId
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReady(true)
+    if (inMemory) setReady(true)
+
+    createClient()
+      .from('quotes')
+      .select('*')
+      .eq('id', quoteId)
+      .single()
+      .then(({ data }) => {
+        if (cancelled) return
+        if (!data) {
+          router.replace('/quotes')
+          return
+        }
+        setQuoteNumber(formatQuoteNumber(data.quote_number, quoteId))
+        if (!inMemory) {
+          initSelections((data.selections ?? {}) as Record<string, SelectionValue>, quoteId)
+          initLineItems((data.line_items ?? []) as LineItem[])
+          setReady(true)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
 
@@ -219,7 +237,11 @@ export default function QuoteReview({
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-8 py-3">
           <button
             type="button"
-            onClick={() => router.push(`/quotes/${quoteId}?tab=comment`)}
+            onClick={() => {
+              // Resume on the tab we left (memory path); ?tab= covers a refreshed/direct-loaded page.
+              setResumeQuoteId(quoteId)
+              router.push(`/quotes/${quoteId}?tab=comment`)
+            }}
             className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-ink transition hover:bg-mist"
           >
             ← Back

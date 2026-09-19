@@ -59,6 +59,14 @@ export function getTabOrder(values: Record<string, SelectionValue>): TabKey[] {
 
 interface ConfiguratorState {
   activeTab: TabKey
+  /**
+   * Set when the user leaves for the Review page; the configurator, on remounting for that same
+   * quote, resumes on the tab they left (instead of resetting to General) and reuses the
+   * in-memory selections. This is what makes both Review's Back button and the browser's own
+   * Back button land on the Comment tab.
+   */
+  resumeQuoteId: string | null
+  setResumeQuoteId: (quoteId: string | null) => void
   setActiveTab: (tab: TabKey) => void
   goNext: (order: TabKey[]) => void
   goBack: (order: TabKey[]) => void
@@ -67,6 +75,8 @@ interface ConfiguratorState {
 
 export const useConfiguratorStore = create<ConfiguratorState>((set, get) => ({
   activeTab: 'general',
+  resumeQuoteId: null,
+  setResumeQuoteId: (quoteId) => set({ resumeQuoteId: quoteId }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   goNext: (order) => {
     const index = order.indexOf(get().activeTab)

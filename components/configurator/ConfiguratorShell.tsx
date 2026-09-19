@@ -11,6 +11,7 @@ import {
 import { useSelectionsStore, type SelectionValue } from '@/store/selectionsStore'
 import { useLineItemsStore } from '@/store/lineItemsStore'
 import { saveQuote, createNewQuote, revertToDraft } from '@/lib/actions/quotes'
+import { saveQuoteInBackground } from '@/lib/quote/saveQuoteInBackground'
 import { useClearHiddenFields } from '@/lib/rules/useClearHiddenFields'
 import { useApplyForcedValues } from '@/lib/rules/useApplyForcedValues'
 import { QUOTE_COMMENT_DRAFT_FIELD, QUOTE_COMMENT_FIELD } from '@/lib/configurator/commentFields'
@@ -34,6 +35,7 @@ import PosTab from './tabs/PosTab'
 import ControllerTab from './tabs/ControllerTab'
 import ItemsTab from './tabs/ItemsTab'
 import CommentTab from './tabs/CommentTab'
+import ReviewLoading from '@/components/quotes/ReviewLoading'
 
 export default function ConfiguratorShell({
   quoteId,
@@ -54,6 +56,7 @@ export default function ConfiguratorShell({
   const setActiveTab = useConfiguratorStore((s) => s.setActiveTab)
   const goNext = useConfiguratorStore((s) => s.goNext)
   const resetConfigurator = useConfiguratorStore((s) => s.reset)
+  const setResumeQuoteId = useConfiguratorStore((s) => s.setResumeQuoteId)
   const values = useSelectionsStore((s) => s.values)
   const setField = useSelectionsStore((s) => s.setField)
   const initSelections = useSelectionsStore((s) => s.init)
@@ -85,17 +88,30 @@ export default function ConfiguratorShell({
   // cleanup from overwriting the saved quote with {} after resetSelections() runs.
   const explicitlySaved = useRef(false)
 
-  // Hydrate the store from DB data whenever quoteId changes.
+  // Hydrate the store from DB data whenever quoteId changes — unless we're coming back from the
+  // Review page for this same quote, in which case memory is both newer than the database (its
+  // save may still be in flight) and already on the right tab, so keep both.
   useEffect(() => {
     skipNextSave.current = true
     explicitlySaved.current = false
     setStatus(initialStatus)
+    const resuming =
+      useConfiguratorStore.getState().resumeQuoteId === quoteId &&
+      useSelectionsStore.getState().loadedQuoteId === quoteId
+    setResumeQuoteId(null)
+    if (resuming) return
     resetConfigurator()
     if (initialTab) setActiveTab(initialTab)
-    initSelections(initialSelections)
+    initSelections(initialSelections, quoteId)
     initLineItems(initialLineItems)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
+
+  // Warm the Review route while the user is still on the Comment tab, so Next → Review doesn't
+  // have to compile / fetch it cold.
+  useEffect(() => {
+    if (activeTab === 'comment') router.prefetch(`/quotes/${quoteId}/review`)
+  }, [activeTab, quoteId, router])
 
   // Answering "Purchasing Vacuum: No" takes the Vacuum tab out of the flow, so anything it
   // generated has to come off the quote too — otherwise a vacuum system the customer isn't
@@ -120,6 +136,8 @@ export default function ConfiguratorShell({
       skipNextSave.current = false
       return
     }
+    // A save was already issued explicitly (Review / New Quote) — don't queue a duplicate behind it.
+    if (explicitlySaved.current) return
 
     // Revert to draft the moment the user makes any edit on a completed quote
     if (statusRef.current === 'complete') {
@@ -130,7 +148,7 @@ export default function ConfiguratorShell({
     setSaving(true)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
-      await saveQuote(quoteId, latestValuesRef.current, latestLineItemsRef.current)
+      await saveQuoteInBackground(quoteId, latestValuesRef.current, latestLineItemsRef.current).catch(() => {})
       setSaving(false)
     }, 2000)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,32 +159,29 @@ export default function ConfiguratorShell({
     return () => {
       if (explicitlySaved.current) return
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      saveQuote(quoteId, latestValuesRef.current, latestLineItemsRef.current)
+      saveQuoteInBackground(quoteId, latestValuesRef.current, latestLineItemsRef.current).catch(() => {})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId])
 
-  // Last tab's Next: publish the Comment tab's note to the quote, flush the save, then leave for
-  // the standalone Review page. The save is awaited (not left to the 2 s autosave) because the
-  // Review page loads the quote from the database — navigating first would show stale data.
-  const handleReview = useCallback(async () => {
+  // Last tab's Next: publish the Comment tab's note to the quote, then go straight to the
+  // Review page. The page renders from the same in-memory stores, so it doesn't wait on the
+  // database — the save is fired here and runs in the background.
+  const handleReview = useCallback(() => {
     setReviewing(true)
-    try {
-      const store = useSelectionsStore.getState()
-      const draft = store.values[QUOTE_COMMENT_DRAFT_FIELD]
-      const text = typeof draft === 'string' ? draft : ''
-      store.setField(QUOTE_COMMENT_FIELD, text.trim() === '' ? null : text)
+    const store = useSelectionsStore.getState()
+    const draft = store.values[QUOTE_COMMENT_DRAFT_FIELD]
+    const text = typeof draft === 'string' ? draft : ''
+    store.setField(QUOTE_COMMENT_FIELD, text.trim() === '' ? null : text)
 
-      explicitlySaved.current = true
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      await saveQuote(quoteId, useSelectionsStore.getState().values, latestLineItemsRef.current)
-      router.push(`/quotes/${quoteId}/review`)
-    } catch (err) {
-      explicitlySaved.current = false
-      setReviewing(false)
-      throw err
-    }
-  }, [quoteId, router])
+    explicitlySaved.current = true
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    setResumeQuoteId(quoteId)
+    // The save goes through fetch (saveQuoteInBackground), not a server action, so it runs
+    // alongside the navigation instead of queuing with — or overriding — it.
+    router.push(`/quotes/${quoteId}/review`)
+    saveQuoteInBackground(quoteId, useSelectionsStore.getState().values, latestLineItemsRef.current).catch(() => {})
+  }, [quoteId, router, setResumeQuoteId])
 
   const handleNewQuote = useCallback(async () => {
     explicitlySaved.current = true
@@ -200,7 +215,7 @@ export default function ConfiguratorShell({
       case 'controller':
         return <ControllerTab />
       case 'comment':
-        return <CommentTab onNext={handleReview} />
+        return <CommentTab onNext={handleReview} reviewing={reviewing} />
       case 'items':
         return <ItemsTab />
     }
@@ -208,6 +223,7 @@ export default function ConfiguratorShell({
 
   return (
     <div className="flex flex-col">
+      {reviewing && <ReviewLoading />}
       <TopBar saving={saving} onNewQuote={handleNewQuote} />
       <TabNav order={tabOrder} />
       <div className="flex">

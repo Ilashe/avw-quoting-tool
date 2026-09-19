@@ -13,6 +13,12 @@ export interface CatalogData {
 
 const EMPTY: CatalogData = { categories: [], items: [], options: [], rules: [] }
 
+// Module-level cache so a remount (e.g. the configurator -> Review page hand-off) starts from
+// what was already fetched instead of blanking and re-downloading the whole catalog. It is
+// stale-while-revalidate: a cached hit renders immediately and the fetch still runs behind it,
+// so the "refresh-to-see" freshness rule below is unchanged.
+const catalogCache = new Map<string, CatalogData>()
+
 /**
  * Client-side fetch of one tab's catalog (categories + items + options + dependency rules).
  * Per decision #8 in PROJECT_STATUS.md, freshness is "refresh-to-see" — no realtime
@@ -20,8 +26,9 @@ const EMPTY: CatalogData = { categories: [], items: [], options: [], rules: [] }
  */
 /** Pass null to load all tabs at once (used by SummaryPanel). */
 export function useEquipmentCatalog(tab: string | null) {
-  const [data, setData] = useState<CatalogData>(EMPTY)
-  const [loading, setLoading] = useState(true)
+  const cacheKey = tab ?? '__all__'
+  const [data, setData] = useState<CatalogData>(() => catalogCache.get(cacheKey) ?? EMPTY)
+  const [loading, setLoading] = useState(() => !catalogCache.has(cacheKey))
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -29,7 +36,7 @@ export function useEquipmentCatalog(tab: string | null) {
     const supabase = createClient()
 
     async function load() {
-      setLoading(true)
+      if (!catalogCache.has(cacheKey)) setLoading(true)
       setError(null)
 
       const categoriesQuery = supabase.from('categories').select('*').order('sort_order')
@@ -64,7 +71,9 @@ export function useEquipmentCatalog(tab: string | null) {
       const items: EquipmentItem[] = itemsForTab.map(({ equipment_options, ...item }) => item)
       const options: EquipmentOption[] = itemsForTab.flatMap((row) => row.equipment_options ?? [])
 
-      setData({ categories, items, options, rules: (rulesRes.data ?? []) as DependencyRule[] })
+      const fresh: CatalogData = { categories, items, options, rules: (rulesRes.data ?? []) as DependencyRule[] }
+      catalogCache.set(cacheKey, fresh)
+      setData(fresh)
       setLoading(false)
     }
 
@@ -72,7 +81,7 @@ export function useEquipmentCatalog(tab: string | null) {
     return () => {
       cancelled = true
     }
-  }, [tab])
+  }, [tab, cacheKey])
 
   return { ...data, loading, error }
 }

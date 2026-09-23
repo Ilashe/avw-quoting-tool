@@ -140,6 +140,11 @@ export function buildQuoteDocument({
     // clear which selection each row came from; the part number/description move into
     // the Description column.
     if (widget === 'multi_part_picker' || widget === 'multi_qty_picker') {
+      // A field can be re-typed to multi_part_picker/multi_qty_picker after quotes already
+      // stored a plain string/number under its field_key (e.g. Hydraulic Units used to be a
+      // single-select radio) — treat a non-array leftover as "nothing selected" instead of
+      // crashing the whole Quote Summary/Review/PDF on .forEach.
+      if (!Array.isArray(raw)) continue
       const rule = rules.find((r) => r.action_type === 'show' && r.target_field === field_key)
       const triggerItem = rule ? items.find((i) => i.metadata.field_key === rule.trigger_field) : null
       const groupLabel = triggerItem?.name ?? item.name

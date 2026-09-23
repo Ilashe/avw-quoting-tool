@@ -85,7 +85,9 @@ export default function MultiPartPicker({
     .filter((p) => orderIndex.has(p.part_number))
     .sort((a, b) => (orderIndex.get(a.part_number) ?? 0) - (orderIndex.get(b.part_number) ?? 0))
 
-  const selected = value ?? []
+  // Defensive: a leftover non-array value from before a field became multi_part_picker should
+  // never crash this picker — treat it as "nothing selected".
+  const selected = Array.isArray(value) ? value : []
   const selectedNumbers = new Set(selected.map((p) => p.part_number))
   const [hovered, setHovered] = useState<{ partNumber: string; top: number; left: number } | null>(null)
 

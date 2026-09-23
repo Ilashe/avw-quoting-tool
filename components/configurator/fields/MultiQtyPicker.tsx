@@ -26,7 +26,10 @@ export default function MultiQtyPicker({
   value: SelectedPart[] | null
   onChange: (parts: SelectedPart[]) => void
 }) {
-  const selected = value ?? []
+  // A field re-typed to multi_qty_picker can still have a leftover plain string/number in the
+  // store from before the change (e.g. Hydraulic Units used to be a single-select radio) —
+  // treat anything that isn't actually an array as "nothing selected" rather than crashing.
+  const selected = Array.isArray(value) ? value : []
   const selectedByNumber = new Map(selected.map((p) => [p.part_number, p]))
   const noneOption = options.find((o) => o.option_value === 'none')
   const pickableOptions = options.filter((o) => o.option_value !== 'none')

@@ -3,9 +3,11 @@
 import Link from 'next/link'
 import { useSelectionsStore } from '@/store/selectionsStore'
 import { useLineItemsStore } from '@/store/lineItemsStore'
-import { computeQuoteTotal } from '@/lib/pricing'
+import { computeQuoteTotal, equipmentOptionsTotal } from '@/lib/pricing'
 import { formatCurrency } from '@/lib/format'
 import { useConveyorPart } from '@/lib/conveyor/useConveyorPart'
+import { useEquipmentCatalog } from '@/lib/catalog/useEquipmentCatalog'
+import { buildBlowerPart, blowerInputsFromSelections } from '@/lib/blower/blowerPartNumber'
 
 export default function TopBar({
   saving,
@@ -19,7 +21,16 @@ export default function TopBar({
   const discountPercent = values['items_discount_percent'] as number | null
   const lineItems = useLineItemsStore((s) => s.items)
   const { price: conveyorPrice } = useConveyorPart(values)
-  const total = computeQuoteTotal(lineItems, values, discountPercent, conveyorPrice)
+  const { items, options } = useEquipmentCatalog(null)
+  const blowerPart = buildBlowerPart(blowerInputsFromSelections(values))
+  const blowerPrice = blowerPart ? blowerPart.price * (Number(values['number_of_blowers']) || 1) : 0
+  const total = computeQuoteTotal(
+    lineItems,
+    values,
+    discountPercent,
+    conveyorPrice,
+    equipmentOptionsTotal(items, options, values) + blowerPrice
+  )
 
   return (
     <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">

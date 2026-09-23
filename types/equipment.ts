@@ -7,6 +7,7 @@ export type FieldWidget =
   | 'combobox_range'
   | 'pending'
   | 'multi_part_picker'
+  | 'multi_qty_picker'
 
 export interface EquipmentItemMetadata {
   field_key: string

@@ -1,0 +1,13 @@
+-- AVW Quoting Tool — migration 0070
+-- Client instructions (2026-09-23): real pricing/part numbers for Water Reclaim System, Spot
+-- Free Water Tank, Water Solenoids, Glass Block Rinse Wall Ring, the Blower HP/Nozzle
+-- Orientation/Rotation/Housing Color part-number system, Blower Arches/Frames/new Crossbars,
+-- Miscellaneous Blower Items, Drying Huggers, Presoak, CTA Type, and Underbody Flush; Hydraulic
+-- Units becomes a multi-select with an independent quantity per selected port/unit; Belt Texture
+-- auto-selects "Diamond Plate" once Type of Belt has any value; a handful of fields get a light
+-- "TBD-compare Josh sheet and quote" tag.
+--
+-- Pure data (plus one metadata widget change per field, no schema change) — applied live via
+-- service-role script, same approach as every equipment_items/equipment_options change since
+-- migration 0012. This file is the re-runnable historical record; the actual inserts/updates are
+-- in scripts/phase13-blower-water-hydraulics-presoak-reconciliation.mjs.

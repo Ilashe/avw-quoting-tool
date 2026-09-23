@@ -3,17 +3,24 @@ import type { EquipmentItem, EquipmentOption, DependencyRule } from '@/types/equ
 import type { LineItem, PartWithImage, SelectedPart } from '@/types/parts'
 import { generalFields } from '@/lib/configurator/generalFields'
 import { isFieldVisible } from '@/lib/rules/engine'
-import { computeQuoteTotal } from '@/lib/pricing'
+import { computeQuoteTotal, equipmentOptionsTotal } from '@/lib/pricing'
 import {
   buildConveyorDescription,
   conveyorInputsFromSelections,
   CONVEYOR_PART_NUMBER_FIELD_KEYS,
   CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS,
 } from '@/lib/conveyor/beltPartNumber'
+import { buildBlowerPart, blowerInputsFromSelections, BLOWER_PART_NUMBER_FIELD_KEYS } from '@/lib/blower/blowerPartNumber'
 import { VACUUM_QUOTE_ITEMS_FIELD } from '@/lib/vacuum/vacuumQuote'
 import { QUOTE_COMMENT_FIELD } from '@/lib/configurator/commentFields'
 
 const CONVEYOR_PART_NUMBER_FIELDS = new Set<string>(CONVEYOR_PART_NUMBER_FIELD_KEYS)
+const BLOWER_PART_NUMBER_FIELDS = new Set<string>(BLOWER_PART_NUMBER_FIELD_KEYS)
+
+/** "No"/"None" both mean "nothing selected" — skipped from every Quote Summary row. */
+function isSkippedValue(raw: unknown): boolean {
+  return typeof raw === 'string' && (raw.toLowerCase() === 'no' || raw.toLowerCase() === 'none')
+}
 
 /** Rate printed on the generated quote, matching the client's existing quote forms. */
 export const SALES_TAX_RATE = 0.06
@@ -83,7 +90,7 @@ export function buildQuoteDocument({
   for (const field of generalFields) {
     const raw = values[field.key]
     if (raw === null || raw === undefined || raw === '') continue
-    if (typeof raw === 'string' && raw.toLowerCase() === 'no') continue
+    if (isSkippedValue(raw)) continue
     const displayValue =
       field.widget === 'text' || field.widget === 'address_autocomplete'
         ? String(raw)
@@ -115,13 +122,16 @@ export function buildQuoteDocument({
     const { field_key, widget, unit } = item.metadata
     const raw = values[field_key]
     if (raw === null || raw === undefined || raw === '') continue
-    if (typeof raw === 'string' && raw.toLowerCase() === 'no') continue
+    if (isSkippedValue(raw)) continue
     if (widget === 'pending') continue
     if (!isFieldVisible(rules, values, field_key)) continue
     if (suppressedTriggerFields.has(field_key)) continue
     // Series/Drive/Config/Horsepower/Length/Type-of-Steel never show as their own rows — they
     // only ever appear combined into the single generated "Belt Part Number" row below.
     if (CONVEYOR_PART_NUMBER_FIELDS.has(field_key)) continue
+    // HP class/Nozzle Orientation/Rotation/Housing Color/Number of Blowers never show as their
+    // own rows — they only ever appear combined into the single generated Blower row below.
+    if (BLOWER_PART_NUMBER_FIELDS.has(field_key)) continue
 
     // Robot Arch (and any future multi_part_picker field): show each picked part's own
     // detail row instead of a generic "Yes". The same part can be selectable under more
@@ -129,7 +139,7 @@ export function buildQuoteDocument({
     // trigger field's name (e.g. "Robot Arch") rather than the bare part number, to make
     // clear which selection each row came from; the part number/description move into
     // the Description column.
-    if (widget === 'multi_part_picker') {
+    if (widget === 'multi_part_picker' || widget === 'multi_qty_picker') {
       const rule = rules.find((r) => r.action_type === 'show' && r.target_field === field_key)
       const triggerItem = rule ? items.find((i) => i.metadata.field_key === rule.trigger_field) : null
       const groupLabel = triggerItem?.name ?? item.name
@@ -152,16 +162,30 @@ export function buildQuoteDocument({
     }
 
     let description: string
-    if (widget === 'number' || widget === 'combobox_range') {
-      description = raw === 'none' ? 'None' : `${raw}${unit ? ' ' + unit : ''}`
-    } else if (widget === 'select_range') {
+    let price = 0
+    if (widget === 'number' || widget === 'combobox_range' || widget === 'select_range') {
       description = `${raw}${unit ? ' ' + unit : ''}`
     } else {
-      description =
-        options.find((o) => o.item_id === item.id && o.option_value === raw)?.option_label ?? String(raw)
+      const matchedOption = options.find((o) => o.item_id === item.id && o.option_value === raw)
+      price = matchedOption?.price_modifier ?? 0
+      // A priced option's option_value is the real part number (e.g. "SOB-RECLAIM-100GPM") — lead
+      // the description with it, same "PART# — label" shape multi_part_picker rows use, so a
+      // priced radio/select choice is just as traceable to its real part in the Quote Summary.
+      description = matchedOption
+        ? price
+          ? `${matchedOption.option_value} — ${matchedOption.option_label}`
+          : matchedOption.option_label
+        : String(raw)
     }
 
-    itemRows.push({ key: field_key, item: item.name, description, quantity: null, unitPrice: null, price: 0 })
+    itemRows.push({
+      key: field_key,
+      item: item.name,
+      description,
+      quantity: price ? 1 : null,
+      unitPrice: price ? price : null,
+      price,
+    })
   }
 
   // Real pricing/description from the client's Items export (imported into `parts`) always wins
@@ -178,7 +202,7 @@ export function buildQuoteDocument({
       if (!detailItem) return null
       const raw = values[fieldKey]
       if (raw === null || raw === undefined || raw === '') return null
-      if (typeof raw === 'string' && raw.toLowerCase() === 'no') return null
+      if (isSkippedValue(raw)) return null
       if (!isFieldVisible(rules, values, fieldKey)) return null
       const label =
         options.find((o) => o.item_id === detailItem.id && o.option_value === raw)?.option_label ?? String(raw)
@@ -192,6 +216,23 @@ export function buildQuoteDocument({
       quantity: 1,
       unitPrice: conveyorPrice,
       price: conveyorPrice,
+    })
+  }
+
+  // Blower Room: HP class + Nozzle Orientation + Rotation + Housing Color select one exact real
+  // part number/price (see lib/blower/blowerPartNumber.ts) — folded into a single row, same
+  // pattern as the conveyor part number above. Number of Blowers is the row's quantity.
+  const blowerPart = buildBlowerPart(blowerInputsFromSelections(values))
+  const blowerQty = Number(values['number_of_blowers']) || 1
+  const blowerPrice = blowerPart ? blowerPart.price * blowerQty : 0
+  if (blowerPart) {
+    itemRows.push({
+      key: 'blower_part_number',
+      item: blowerPart.partNumber,
+      description: blowerPart.description,
+      quantity: blowerQty,
+      unitPrice: blowerPart.price,
+      price: blowerPrice,
     })
   }
 
@@ -224,7 +265,13 @@ export function buildQuoteDocument({
   }
 
   const discountPercent = (values['items_discount_percent'] as number | null) ?? null
-  const subtotal = computeQuoteTotal(lineItems, values, discountPercent, conveyorPrice)
+  const subtotal = computeQuoteTotal(
+    lineItems,
+    values,
+    discountPercent,
+    conveyorPrice,
+    equipmentOptionsTotal(items, options, values) + blowerPrice
+  )
   const salesTax = subtotal * SALES_TAX_RATE
   const comment = typeof values[QUOTE_COMMENT_FIELD] === 'string' ? (values[QUOTE_COMMENT_FIELD] as string) : ''
 

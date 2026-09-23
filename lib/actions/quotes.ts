@@ -5,8 +5,10 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { SelectionValue } from '@/store/selectionsStore'
 import type { LineItem } from '@/types/parts'
-import { computeQuoteTotal } from '@/lib/pricing'
+import { computeQuoteTotal, equipmentOptionsTotal } from '@/lib/pricing'
 import { buildConveyorPartNumber, conveyorInputsFromSelections } from '@/lib/conveyor/beltPartNumber'
+import { buildBlowerPart, blowerInputsFromSelections } from '@/lib/blower/blowerPartNumber'
+import type { EquipmentItem, EquipmentOption } from '@/types/equipment'
 
 export interface QuoteSummary {
   id: string
@@ -108,13 +110,36 @@ async function conveyorPartPrice(
   return (data as { unit_price: number | null } | null)?.unit_price ?? 0
 }
 
+// Server-side twin of the client's useEquipmentCatalog(null) — same query shape, fetches the
+// whole catalog so equipmentOptionsTotal can price whatever's currently selected.
+async function equipmentOptionsPrice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  selections: Record<string, SelectionValue>
+): Promise<number> {
+  const { data } = await supabase.from('equipment_items').select('*, equipment_options(*)').eq('is_active', true)
+  type ItemRow = EquipmentItem & { equipment_options: EquipmentOption[] }
+  const rows = (data ?? []) as ItemRow[]
+  const items: EquipmentItem[] = rows.map(({ equipment_options, ...item }) => item)
+  const options: EquipmentOption[] = rows.flatMap((row) => row.equipment_options ?? [])
+  return equipmentOptionsTotal(items, options, selections)
+}
+
 async function quoteTotal(
   supabase: Awaited<ReturnType<typeof createClient>>,
   selections: Record<string, SelectionValue>,
   lineItems: LineItem[]
 ): Promise<number> {
   const conveyorPrice = await conveyorPartPrice(supabase, selections)
-  return computeQuoteTotal(lineItems, selections, selections['items_discount_percent'] as number | null, conveyorPrice)
+  const optionsPrice = await equipmentOptionsPrice(supabase, selections)
+  const blowerPart = buildBlowerPart(blowerInputsFromSelections(selections))
+  const blowerPrice = blowerPart ? blowerPart.price * (Number(selections['number_of_blowers']) || 1) : 0
+  return computeQuoteTotal(
+    lineItems,
+    selections,
+    selections['items_discount_percent'] as number | null,
+    conveyorPrice,
+    optionsPrice + blowerPrice
+  )
 }
 
 export async function saveQuote(

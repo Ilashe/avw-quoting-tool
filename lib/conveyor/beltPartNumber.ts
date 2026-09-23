@@ -139,6 +139,7 @@ export const CONVEYOR_PART_NUMBER_FIELD_KEYS = [
   'conveyor_belt_type',
   'conveyor_horsepower',
   'conveyor_length',
+  'belt_texture',
   'belt_color',
   'flight_color',
   'safety_stripe',
@@ -152,6 +153,7 @@ export const CONVEYOR_PART_NUMBER_FIELD_KEYS = [
 // NOT include Roller Correlator (real priced part, stays its own line item) or the plain
 // Safety Stripe Yes/No trigger (redundant once Safety Stripe Color is shown).
 export const CONVEYOR_DESCRIPTION_DETAIL_FIELD_KEYS = [
+  'belt_texture',
   'belt_color',
   'flight_color',
   'safety_stripe_color',
